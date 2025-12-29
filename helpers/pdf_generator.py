@@ -559,7 +559,6 @@ class BoletaGenerator:
         # Lista de columnas de materiales a procesar (según estructura de datos)
         # Se verifica si existen y si tienen cantidad > 0
         materials = [
-            "N° PRECINTO",
             "JABAS VACIAS",
             "JARRAS VACIAS",
             "PARIHUELAS",
@@ -576,15 +575,17 @@ class BoletaGenerator:
         # Lista de items validos
         valid_rows = []
         for material in materials:
+            print(material)
             try:
                 val = data.get(material, 0)
+                print(val)
                 if pd.isna(val) or val == '': val = 0
                 qty = float(val)
                 
                 if qty > 0:
                     qty_str = str(int(qty)) if qty.is_integer() else f"{qty:.2f}"
                     valid_rows.append([
-                        data.get('Nº PRECINTO', ''),                    # N° PRECINTO
+                        "-",                    # N° PRECINTO
                         qty_str,                # CANTIDAD
                         "UND",                  # UNIDAD
                         material,               # DESCRIPCION
@@ -592,8 +593,29 @@ class BoletaGenerator:
                         "-",                    # PESO NETO
                         data.get('OBSERVACIONES', ''), # OBSERVACION
                     ])
+                    #data.get('Nº PRECINTO', '')
             except Exception:
                 continue
+
+        # Lógica para Precintos
+        precinto_val = data.get('Nº PRECINTO', '')
+        if precinto_val and str(precinto_val).strip() not in ['', '-', 'nan', 'None']:
+            try:
+                precinto_str = str(precinto_val)
+                # Contar precintos separados por guion
+                qty_precintos = len([p for p in precinto_str.split('-') if p.strip()])
+                
+                valid_rows.append([
+                    precinto_str,               # CODIGO
+                    str(qty_precintos),         # CANTIDAD
+                    "UND",                      # UNID
+                    "PRECINTOS",                # DESCRIPCION
+                    "-",                        # PESO BRUTO
+                    "-",                        # PESO NETO
+                    data.get('OBSERVACIONES') or '' # OBSERVACION
+                ])
+            except Exception as e:
+                print(f"Error processing precintos: {e}")
                 
         # Dibujar siempre 5 filas
         num_rows = 5
