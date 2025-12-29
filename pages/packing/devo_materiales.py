@@ -29,7 +29,6 @@ def load_data_devolucion_materiales():
     print("📊 Cargando datos de Google Sheets...")
     data_rp = read_sheet("1av24G3C1A_SORqJorNBlHr_OT0iUejP8kNL8msQBdKU", "BD")
     data_rp = pd.DataFrame(data_rp[1:], columns=data_rp[0])    
-    data_rp['id'] = data_rp.index
     data_rp =data_rp.rename(columns={
         "NOMBRE DEL CONDUCTOR": "CONDUCTOR", 
         "# JABAS VACIAS": "JABAS VACIAS",
@@ -86,7 +85,8 @@ def load_data_devolucion_materiales():
     data_rp["PESO NETO"] = data_rp["PESO NETO"].fillna(0)
     data_rp["PESO NETO"] = data_rp["PESO NETO"].astype(float)
 
-    data_rp["OBSERVACIONES"] = data_rp["OBSERVACIONES"].replace("", "-")
+    data_rp["OBSERVACIONES"] = data_rp["OBSERVACIONES"].replace("", None)
+    data_rp["CORRELATIVO"] = data_rp["CORRELATIVO"].replace("", "-")
     return data_rp
 
 def create_custom_layout():

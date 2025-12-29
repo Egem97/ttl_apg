@@ -364,7 +364,7 @@ class BoletaGenerator:
             
         # QR Code RUC
         try:
-            qr_data = "20611417749"
+            qr_data = str(data.get('CORRELATIVO', '-'))
             qr_widget = qr.QrCodeWidget(qr_data)
             bounds = qr_widget.getBounds()
             width = bounds[2] - bounds[0]
@@ -413,10 +413,10 @@ class BoletaGenerator:
         c.drawCentredString(ruc_x + ruc_w/2, ruc_y + 33, "BOLETA DE DESPACHO")
         
         # Numero Boleta
-        nro_boleta = str(data.get('id', '000000')).zfill(6)
+        nro_boleta = str(data.get('CORRELATIVO', '-'))
         c.setFont("Helvetica-Bold", 14)
         c.setFillColor(colors.red)
-        c.drawCentredString(ruc_x + ruc_w/2, ruc_y + 8, f"001 - N° {nro_boleta}")
+        c.drawCentredString(ruc_x + ruc_w/2, ruc_y + 8, nro_boleta)
         c.setFillColor(colors.black)
 
     def draw_fields(self, data):
@@ -590,14 +590,14 @@ class BoletaGenerator:
                         material,               # DESCRIPCION
                         "-",                    # PESO BRUTO
                         "-",                    # PESO NETO
-                        "DEVOLUCIÓN DE MATERIAL" # OBSERVACION
+                        data.get('OBSERVACIONES', ''), # OBSERVACION
                     ])
             except Exception:
                 continue
                 
         # Dibujar siempre 5 filas
         num_rows = 5
-        c.setFont("Helvetica", 9)
+        c.setFont("Helvetica", 8)
         
         for i in range(num_rows):
             if i < len(valid_rows):
@@ -627,7 +627,7 @@ class BoletaGenerator:
         # El current_y ahora está en la base de la tabla tras el loop
         # Dibujamos el rectangulo desde ahí hacia arriba
         c.rect(obs_x, current_y, obs_w, total_h)
-        c.drawCentredString(obs_x + obs_w/2, current_y + total_h/2 - 4, "DEVOLUCIÓN DE MATERIAL")
+        c.drawCentredString(obs_x + obs_w/2, current_y + total_h/2 - 4, data.get('OBSERVACIONES') or 'DEVOLUCIÓN DE MATERIAL')
 
     def draw_single_boleta(self, data):
         c = self.c
