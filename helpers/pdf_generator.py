@@ -362,23 +362,7 @@ class BoletaGenerator:
         except Exception as e:
             print(f"Error loading logo: {e}")
             
-        # QR Code RUC
-        try:
-            qr_data = str(data.get('CORRELATIVO', '-'))
-            qr_widget = qr.QrCodeWidget(qr_data)
-            bounds = qr_widget.getBounds()
-            width = bounds[2] - bounds[0]
-            height = bounds[3] - bounds[1]
-            
-            # Desired size ~ 60x60
-            size = 60.0
-            scale = size / width
-            
-            d = Drawing(size, size, transform=[scale, 0, 0, scale, 0, 0])
-            d.add(qr_widget)
-            renderPDF.draw(d, c, 130, h - 95) # Posicionado a la derecha del logo
-        except Exception as e:
-            print(f"Error drawing QR: {e}")
+
         
         # Título Central
         c.setFont("Helvetica-Bold", 16)
@@ -739,18 +723,27 @@ class BoletaGenerator:
         c.drawString(460, y_row3, "N° DE CONSTANCIA DE RECEPCIÓN:") # Moved left from 490
         c.line(585, y_row3 - 2, 690, y_row3 - 2) # Start 585 (was 615), End 690
         c.drawString(590, y_row3, "-")
-        # Constancia signature box (Derecha)
-        # Hacemos el cuadro mas ancho y acomodamos el texto
-        box_x = 700
-        box_w = 110
-        center_x = box_x + box_w / 2
-        
-        c.roundRect(box_x, y_footer_base + 15, box_w, 50, 4, stroke=1, fill=0)
-        
-        c.setFont("Helvetica", 4)
-        # Separamos en lineas para que entre bien
-        c.drawCentredString(center_x, y_footer_base + 23, "FIRMA Y SELLO DE CLIENTE O TRANSPORTISTA")
-        c.drawCentredString(center_x, y_footer_base + 18, "EN SEÑAL DE HABER RECIBIDO CONFORME")
+        # Constancia signature box (Derecha) -> AHORA QR
+        try:
+            qr_data = str(data.get('CORRELATIVO', '-'))
+            qr_widget = qr.QrCodeWidget(qr_data)
+            bounds = qr_widget.getBounds()
+            width = bounds[2] - bounds[0]
+            height = bounds[3] - bounds[1]
+            
+            # Desired size same as box height roughly
+            size = 120.0
+            scale = size / width
+            
+            # Posicionar donde estaba el box
+            # box_x = 700 (definido arriba)
+            # y_footer_base + 15 (base del box)
+            
+            d = Drawing(size, size, transform=[scale, 0, 0, scale, 0, 0])
+            d.add(qr_widget)
+            renderPDF.draw(d, c, 700, y_footer_base - 20) 
+        except Exception as e:
+            print(f"Error drawing QR in footer: {e}")
 
     def generate(self, data_list):
         for i, data in enumerate(data_list):
