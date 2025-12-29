@@ -1,0 +1,3 @@
+"""
+Config - Configuraciones de dashboards
+"""
