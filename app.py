@@ -18,12 +18,15 @@ data = {
     'name_empresa':NAME_EMPRESA,
     'tipo_empresa':RUBRO_EMPRESA,
 }
-
+scripts = [
+    "https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.10.8/dayjs.min.js",      # dayjs  
+    "https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.10.8/locale/fr.min.js",  # french locale
+]
 app = Dash(
     __name__,
     suppress_callback_exceptions=True,
     use_pages=True,
-    external_stylesheets=dmc.styles.ALL,
+    external_stylesheets=[dmc.styles.ALL]+scripts,
     update_title=False,
     assets_folder='assets',  # Asegurarse de que assets_folder apunte a la carpeta correcta
     title="Packing Tools"
@@ -50,6 +53,7 @@ def serve_resource(path):
 
 # Layout condicional
 app.layout = dmc.MantineProvider(
+    forceColorScheme="dark",
     #theme={
     #    "primaryColor": "cyan",
     #    "defaultRadius": "xl",

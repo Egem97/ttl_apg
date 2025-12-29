@@ -12,6 +12,7 @@ from helpers.get_sheets import read_sheet
 import time
 from datetime import datetime
 from helpers.pdf_generator import generate_boleta_pdf
+import base64
 
 # 🚀 Configuraciones de rendimiento optimizadas
 pd.options.mode.chained_assignment = None  # Evitar warnings de SettingWithCopyWarning
@@ -108,15 +109,19 @@ def create_custom_layout():
                     )
                 ], size=6),
                 Column([
-                    dmc.DateInput(
-                        id=f"{PAGE_ID}date-filter",
-                        label="Fecha",
-                        placeholder="Seleccionar fecha",
-                        clearable=True,
-                        style={"width": "100%"},
-                        #value=datetime.now(),
-                        #type="multiple",
-                    )
+                    
+                        dmc.DateInput(
+                            id=f"{PAGE_ID}date-filter",
+                            label="Fecha",
+                            placeholder="Seleccionar fecha",
+                            clearable=True,
+                            style={"width": "100%"},
+                            
+                            #value=datetime.now(),
+                            #type="multiple",
+                        ),
+                       
+                    
                 ], size=3),
                 Column([
                     dmc.MultiSelect(
@@ -133,7 +138,7 @@ def create_custom_layout():
             Row([
                 Column([
                     html.Div(children=[
-                        dmc.Loader(color="red", size="md", type="oval",id=f"{PAGE_ID}loading-indicator"),
+                        dmc.Loader(color="blue", size="md", type="oval",id=f"{PAGE_ID}loading-indicator"),
                         html.Div(id=f"{PAGE_ID}main-table"),
                     ]),
                     
@@ -142,18 +147,34 @@ def create_custom_layout():
                         dmc.Button(
                             "Generar PDF Boletas", 
                             id=f"{PAGE_ID}btn-pdf", 
-                            color="red", 
+                            color="blue", 
                             variant="outline", 
-                            #leftIcon=dmc.ThemeIcon(
-                             #   color="red", 
-                             #   variant="light", 
-                             #   radius="xl", 
-                             #   size="sm", 
-                             #   children=html.I(className="fas fa-file-pdf")
-                            #)
                         ),
                     ]),
                     dcc.Download(id=f"{PAGE_ID}download-pdf"),
+                    
+                    # Modal de Previsualización
+                    dmc.Modal(
+                        id=f"{PAGE_ID}preview-modal",
+                        title="Previsualización de Boletas",
+                        size="xl",
+                        padding="md",
+                        children=[
+                            html.Iframe(
+                                id=f"{PAGE_ID}pdf-preview-frame",
+                                style={"width": "100%", "height": "600px", "border": "none"}
+                            ),
+                            dmc.Group([
+                                dmc.Button(
+                                    "Descargar PDF",
+                                    id=f"{PAGE_ID}btn-confirm-download",
+                                    color="blue",
+                                    #variant="filled",
+                                    #leftIcon=html.I(className="fas fa-download")
+                                )
+                            ], grow=True)
+                        ]
+                    )
                     
                 ], size=12)
             ])
@@ -237,7 +258,7 @@ def update_table(data, start_date, destinatarios):
                 }
             },
             style={"height": "400px"},
-            className="ag-theme-alpine-dark compact" , 
+            className="ag-theme-quartz compact", 
             #className="ag-theme-alpine"
         )
 """
@@ -280,23 +301,45 @@ def output_selected_rows(selected_rows, data):
         return html.Div(f"Error: {e}")
 """
 @callback(
-    Output(f"{PAGE_ID}download-pdf", "data"),
+    Output(f"{PAGE_ID}preview-modal", "opened"),
+    Output(f"{PAGE_ID}pdf-preview-frame", "src"),
+    Output(f"{PAGE_ID}modal-data-store", "data"),
     Input(f"{PAGE_ID}btn-pdf", "n_clicks"),
     State(f"{PAGE_ID}main-ag-grid", "selectedRows"),
     prevent_initial_call=True
 )
-def download_pdf(n_clicks, selected_rows):
-    print(selected_rows)
+def open_preview_modal(n_clicks, selected_rows):
+    if not n_clicks or not selected_rows:
+        return False, dash.no_update, dash.no_update
+        
+    try:
+        # Generar PDF
+        pdf_buffer = generate_boleta_pdf(selected_rows)
+        
+        # Convertir a base64 para visualizar
+        pdf_base64 = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
+        pdf_src = f"data:application/pdf;base64,{pdf_base64}"
+        
+        return True, pdf_src, selected_rows
+    except Exception as e:
+        print(f"Error generando previsualización: {e}")
+        return False, dash.no_update, dash.no_update
+
+@callback(
+    Output(f"{PAGE_ID}download-pdf", "data"),
+    Input(f"{PAGE_ID}btn-confirm-download", "n_clicks"),
+    State(f"{PAGE_ID}modal-data-store", "data"),
+    prevent_initial_call=True
+)
+def confirm_download_pdf(n_clicks, selected_rows):
     if not n_clicks or not selected_rows:
         return None
         
     try:
-        # Generar PDF usando la función del helper
-        # Pasamos la lista de filas seleccionadas directamente
+        # Regenerar PDF para descarga (más eficiente que pasar el base64 de vuelta)
         pdf_buffer = generate_boleta_pdf(selected_rows)
         
-        # Retornar el archivo para descarga
         return dcc.send_bytes(pdf_buffer.getvalue(), filename=f"boletas_despacho_{int(time.time())}.pdf")
     except Exception as e:
-        print(f"Error generando PDF: {e}")
+        print(f"Error en descarga final: {e}")
         return None

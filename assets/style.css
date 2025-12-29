@@ -1,3 +1,10 @@
 .ag-theme-alpine.compact {
     --ag-grid-size: 3px;
 }
+
+.ag-theme-quartz.compact {
+    --ag-font-size: 11px;
+    --ag-grid-size: 3px;
+    --ag-header-height: 25px;
+    --ag-row-height: 25px;
+}
