@@ -587,7 +587,7 @@ class BoletaGenerator:
                         data.get('Nº PRECINTO', ''),                    # N° PRECINTO
                         qty_str,                # CANTIDAD
                         "UND",                  # UNIDAD
-                        "PRECINTOS " + material,               # DESCRIPCION
+                        material,               # DESCRIPCION
                         "-",                    # PESO BRUTO
                         "-",                    # PESO NETO
                         "DEVOLUCIÓN DE MATERIAL" # OBSERVACION

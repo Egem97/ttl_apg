@@ -2,9 +2,9 @@ import asyncio
 import dash
 import pandas as pd
 import dash_mantine_components as dmc
+from dash_iconify import DashIconify
 from dash import html, dcc, callback, Input, Output, State
 from components.grid import Row, Column
-from components.simple_components import create_page_header
 from constants import PAGE_TITLE_PREFIX
 from helpers.helpers import generate_list_month
 from dash_ag_grid import AgGrid
@@ -103,10 +103,8 @@ def create_custom_layout():
         dmc.Container([
             Row([
                 Column([
-                    create_page_header(
-                        title="Devolucion Materiales",
-                        #subtitle="Gestión y visualización de datos de devolucion de materiales"
-                    )
+                    DashIconify(icon="flat-ui:resume", width=30),
+                    dmc.Title("Devolucion Materiales", order=1, mb="xs")
                 ], size=6),
                 Column([
                     
@@ -148,7 +146,10 @@ def create_custom_layout():
                             "Generar PDF Boletas", 
                             id=f"{PAGE_ID}btn-pdf", 
                             color="blue", 
-                            variant="outline", 
+                            variant="filled", 
+                            leftSection=DashIconify(icon="fluent:document_print"),
+                            
+                            
                         ),
                     ]),
                     dcc.Download(id=f"{PAGE_ID}download-pdf"),
@@ -169,6 +170,7 @@ def create_custom_layout():
                                     "Descargar PDF",
                                     id=f"{PAGE_ID}btn-confirm-download",
                                     color="blue",
+                                    
                                     #variant="filled",
                                     #leftIcon=html.I(className="fas fa-download")
                                 )
@@ -304,6 +306,7 @@ def output_selected_rows(selected_rows, data):
     Output(f"{PAGE_ID}preview-modal", "opened"),
     Output(f"{PAGE_ID}pdf-preview-frame", "src"),
     Output(f"{PAGE_ID}modal-data-store", "data"),
+   
     Input(f"{PAGE_ID}btn-pdf", "n_clicks"),
     State(f"{PAGE_ID}main-ag-grid", "selectedRows"),
     prevent_initial_call=True
