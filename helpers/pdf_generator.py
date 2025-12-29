@@ -767,7 +767,7 @@ class BoletaGenerator:
                 # Boleta Superior
                 # Posicionar en la mitad superior de A4
                 # Translación Y: Empezar un poco debajo del borde superior
-                self.c.translate(margin_x, self.page_height * 0.52) 
+                self.c.translate(margin_x, self.page_height * 0.48) 
             else:
                 # Boleta Inferior
                 # Posicionar en la mitad inferior
