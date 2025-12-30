@@ -694,8 +694,8 @@ class BoletaGenerator:
         
         # Col 1
         c.drawString(40, y_row2, "DOMICILIO FISCAL:")
-        c.line(110, y_row2 - 2, 280, y_row2 - 2)
-        c.drawString(115, y_row2, "-")
+        c.line(125, y_row2 - 2, 280, y_row2 - 2)
+        c.drawString(130, y_row2, "-")
         # Col 2
         c.drawString(290, y_row2, "N° DE RUC:")
         c.line(345, y_row2 - 2, 450, y_row2 - 2) 
@@ -711,13 +711,13 @@ class BoletaGenerator:
         
         # Col 1
         c.drawString(40, y_row3, "PLACA VEHICULO:")
-        c.line(105, y_row3 - 2, 180, y_row3 - 2)
-        c.drawString(110, y_row3, str(data.get('PLACA', data.get('Nº PLACA', ''))))
+        c.line(125, y_row3 - 2, 190, y_row3 - 2)
+        c.drawString(130, y_row3, str(data.get('PLACA', data.get('Nº PLACA', ''))))
         
         # Col 2
-        c.drawString(200, y_row3, "NOMBRE DEL CHOFER:") 
-        c.line(280, y_row3 - 2, 450, y_row3 - 2) 
-        c.drawString(285, y_row3, str(data.get('CONDUCTOR', '-')))
+        c.drawString(210, y_row3, "NOMBRE DEL CHOFER:") 
+        c.line(315, y_row3 - 2, 450, y_row3 - 2) 
+        c.drawString(320, y_row3, str(data.get('CONDUCTOR', '-')))
         
         # Col 3
         c.drawString(460, y_row3, "N° DE CONSTANCIA DE RECEPCIÓN:") 
