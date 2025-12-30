@@ -677,16 +677,16 @@ class BoletaGenerator:
         c.setFont("Helvetica-Bold", 7)
         c.drawString(40, y_footer_base + 65, "HECHO POR APG PACKING") 
         
-        c.setFont("Helvetica", 6)
+        c.setFont("Helvetica", 8)
         
         # Ajustamos coordenadas para dar espacio al recuadro de firma (Width ~120 reserved at right)
         # Max width ~840. Box starts ~700. Lines should end ~690.
         
         # Linea 1: Apellidos y Nombres Transportista
         y_row1 = y_footer_base + 50
-        c.drawString(40, y_row1, "APELLIDOS Y NOMBRES Ó RAZÓN SOCIAL DEL TRANSPORTISTAS:")
-        c.line(260, y_row1 - 2, 690, y_row1 - 2)
-        c.drawString(265, y_row1, str(data.get('RAZON SOCIAL TRANSPORTE', ''))) 
+        c.drawString(40, y_row1, "APELLIDOS Y NOMBRES Ó RAZÓN SOCIAL DEL TRANSPORTISTA:")
+        c.line(310, y_row1 - 2, 690, y_row1 - 2)
+        c.drawString(315, y_row1, str(data.get('RAZON SOCIAL TRANSPORTE', ''))) 
 
         # Linea 2: Domicilio, RUC, Marca
         # Redistribuimos para ganar espacio
@@ -698,13 +698,13 @@ class BoletaGenerator:
         c.drawString(115, y_row2, "-")
         # Col 2
         c.drawString(290, y_row2, "N° DE RUC:")
-        c.line(330, y_row2 - 2, 450, y_row2 - 2) # Reduced end from 480
-        c.drawString(335, y_row2, str(data.get('Nº RUC TRANSPORTISTA', '')))
+        c.line(345, y_row2 - 2, 450, y_row2 - 2) 
+        c.drawString(350, y_row2, str(data.get('Nº RUC TRANSPORTISTA', '')))
         
         # Col 3
-        c.drawString(460, y_row2, "MARCA DEL VEHICULO:") # Moved left from 490
-        c.line(540, y_row2 - 2, 690, y_row2 - 2) # Start 540 (was 570), End 690 (was 700)
-        c.drawString(545, y_row2, str(data.get('MARCA_VEHICULO', '-')))
+        c.drawString(460, y_row2, "MARCA DEL VEHICULO:") 
+        c.line(560, y_row2 - 2, 690, y_row2 - 2) 
+        c.drawString(565, y_row2, str(data.get('MARCA_VEHICULO', '-')))
 
         # Linea 3: Placa, Chofer, Constancia
         y_row3 = y_footer_base + 20
@@ -715,14 +715,14 @@ class BoletaGenerator:
         c.drawString(110, y_row3, str(data.get('PLACA', data.get('Nº PLACA', ''))))
         
         # Col 2
-        c.drawString(200, y_row3, "NOMBRE DEL CHOFER:") # Moved slightly
-        c.line(280, y_row3 - 2, 450, y_row3 - 2) # End 450
+        c.drawString(200, y_row3, "NOMBRE DEL CHOFER:") 
+        c.line(280, y_row3 - 2, 450, y_row3 - 2) 
         c.drawString(285, y_row3, str(data.get('CONDUCTOR', '-')))
         
         # Col 3
-        c.drawString(460, y_row3, "N° DE CONSTANCIA DE RECEPCIÓN:") # Moved left from 490
-        c.line(585, y_row3 - 2, 690, y_row3 - 2) # Start 585 (was 615), End 690
-        c.drawString(590, y_row3, "-")
+        c.drawString(460, y_row3, "N° DE CONSTANCIA DE RECEPCIÓN:") 
+        c.line(615, y_row3 - 2, 690, y_row3 - 2) 
+        c.drawString(620, y_row3, "-")
         # Constancia signature box (Derecha) -> AHORA QR
         try:
             qr_data = str(data.get('CORRELATIVO', '-'))
