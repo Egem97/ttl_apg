@@ -260,7 +260,7 @@ def update_table(data, start_date, destinatarios):
                 }
             },
             style={"height": "400px"},
-            className="ag-theme-quartz compact", 
+            className="ag-theme-alpine-dark compact", 
             #className="ag-theme-alpine"
         )
 """

@@ -62,6 +62,13 @@ def create_navbar(data):
                         ),
                     ],
                 ),
+                dmc.NavLink(
+                    label="Generador QR",
+                    leftSection=get_icon(icon="tabler:qrcode"),
+                    childrenOffset=28,
+                    href="/packing/qr_generator",
+                    opened=False,
+                ),
                 
             ],
             p=0,
