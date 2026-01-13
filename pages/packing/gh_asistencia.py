@@ -192,6 +192,7 @@ def process_uploaded_file(contents, filename):
         elif 'xlsx' in filename:
             # Assume that the user uploaded an excel file
             df = pd.read_excel(io.BytesIO(decoded),skiprows=8)
+            df = df.drop(["Unnamed: 0","OBSERVACIONES"], axis=1)
             df.columns = df.columns.str.strip().str.upper()
             df = df[~df["HI (BIOMETRICO)"].isin(["FALTA", "PERMISO/ FALTA", "DESCANSO", "AUSENTE/ FALTA"])]
             df = df[df["HI (BIOMETRICO)"].notna()]
@@ -233,7 +234,7 @@ def update_output(list_of_contents, list_of_names):
         return html.Div("Error procesando archivos"), []
         
     final_df = pd.concat(dfs, ignore_index=True)
-    
+    print(f"dataframe size: {final_df.shape}")
     grid = AgGrid(
             id=f"grid-final",
             rowData=final_df.to_dict('records'),

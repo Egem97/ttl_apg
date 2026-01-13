@@ -8,6 +8,9 @@ def get_access_token() -> Optional[str]:
     """
     Obtiene el token de acceso para Microsoft Graph API
     """
+    MICROSOFT_GRAPH_TENANT_ID=config['microsoft_graph']['tenant_id']
+    MICROSOFT_GRAPH_CLIENT_ID=config['microsoft_graph']['client_id']
+    MICROSOFT_GRAPH_CLIENT_SECRET=config['microsoft_graph']['client_secret']
     if not all([MICROSOFT_GRAPH_TENANT_ID, MICROSOFT_GRAPH_CLIENT_ID, MICROSOFT_GRAPH_CLIENT_SECRET]):
         print("Error: Microsoft Graph API credentials no configuradas en config.yaml")
         return None

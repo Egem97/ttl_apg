@@ -1,4 +1,5 @@
-.ag-theme-alpine.compact {
+.ag-theme-alpine.compact,
+.ag-theme-alpine-dark.compact {
     --ag-grid-size: 3px;
 }
 

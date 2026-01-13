@@ -75,7 +75,11 @@ def create_custom_layout():
         Row([
             Column([
                 html.Div(id='output-status', style={'marginTop': '20px'}),
-                dcc.Download(id="download-pdf-qr"),
+                dcc.Loading(
+                    id="loading-pdf",
+                    type="default",
+                    children=dcc.Download(id="download-pdf-qr"),
+                ),
                 dcc.Store(id="stored-dataframe-json"),
             ], size=12)
         ])

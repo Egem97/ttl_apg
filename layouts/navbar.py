@@ -69,7 +69,21 @@ def create_navbar(data):
                     href="/packing/qr_generator",
                     opened=False,
                 ),
-                
+                dmc.NavLink(
+                    label="Transformación Data",
+                    leftSection=get_icon(icon="tabler:table"),
+                    childrenOffset=28,
+                    opened=False,
+                    children=[
+                        dmc.NavLink(
+                            leftSection=get_icon(icon="tabler:data-table"),
+                            label="Materia Prima",
+                            id = "navlink-dashboard",
+                            active="exact",
+                            href="/apg/transform-materia-prima"
+                        ),
+                    ],
+                ),
             ],
             p=0,
         )
