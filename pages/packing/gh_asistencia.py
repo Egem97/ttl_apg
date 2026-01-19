@@ -84,8 +84,23 @@ def calcular_horas(hi, hf, jornal):
     # Máximo de horas ordinarias
     max_ordinarias = 8.0 if jornal == 6 else 9.6
 
-    # Horas reales (menos refrigerio)
-    horas_reales = (hf - hi).total_seconds() / 3600 - 1
+    # Horas Totales Raw
+    duration_raw = (hf - hi).total_seconds() / 3600
+
+    # Determinar deducción de refrigerio
+    # Regla: Si HI y HF están entre 06:00 y 12:00, y dura menos de 5h -> No reducción (0h)
+    # En cualquier otro caso -> Reducción de 1h
+    
+    limit_start = datetime.combine(hi.date(), time(6, 0))
+    limit_end = datetime.combine(hi.date(), time(12, 0))
+    
+    deduction = 1.0
+    # Verificamos si todo el intervalo cae dentro de 06:00 - 12:00
+    if hi >= limit_start and hf <= limit_end and duration_raw < 5:
+        deduction = 0.0
+
+    # Horas reales (menos refrigerio/deducción)
+    horas_reales = duration_raw - deduction
 
     # Segementación de Horas
     # Simular boundaries
@@ -131,32 +146,22 @@ def calcular_horas(hi, hf, jornal):
         current = step_end
 
     # Determinación de Turno (M vs N) basado en Hora de Inicio
-    # Según requerimiento:
-    # HI <= 13 (1 PM) -> Turno M (Day Logic)
-    # HI > 13 (1 PM) -> Turno N (Night Logic)
-    # Nota: El usuario mencionó "mayor igual a 13". Vamos a usar HI >= 13 para Noche si es consecuente.
-    # Pero usualmente 13:00 es un turno tarde. Dejemos el corte en 13.
-    # Criterio estricto del usuario:
-    # 1. HI <= 13 => Turno M
-    # 2. HI >= 13 (overlaps?) => Turno N. Asumo > 13 para diferenciar.
-    # Si HI == 13:00 -> ??? Digamos M.
-    
     es_turno_noche = hi.hour >= 13
 
     if es_turno_noche: 
         # Lógica Turno NOCHE (Night First / Special Allocation)
         
-        # Refrigerio (1h) se resta de Noche
-        if raw_night >= 1:
-            net_night = raw_night - 1
+        # Refrigerio (deduction) se resta de Noche
+        if raw_night >= deduction:
+            net_night = raw_night - deduction
             net_day2 = raw_day2
         else:
-             # Si no hay suficiente noche (raro en turno noche), restar del dia post
-             remainder = 1 - raw_night
+             # Si no hay suficiente noche, restar del dia post
+             remainder = deduction - raw_night
              net_night = 0
              net_day2 = max(0, raw_day2 - remainder)
              
-        net_day1 = raw_day1 # Pre-night day usually minimal or zero in typical night shifts starting 20:00
+        net_day1 = raw_day1 
         
         # Asignacion Ordinarias
         cap = max_ordinarias
@@ -178,74 +183,36 @@ def calcular_horas(hi, hf, jornal):
         horas_nocturnas = ord_night_core + ord_night_ext
         
         # Extras
-        # Remanente real
-        rem_day1 = net_day1 - ord_day1 # Should be 0 usually
-        rem_night = net_night - ord_night_core # Should be 0 usually
-        rem_day2 = net_day2 - ord_night_ext # Where extras happen usually
-        
-        # Regla extras noche según Excel anterior observado: 
-        # "Primeras 2h son Night Ex, resto Day Ex" para las horas que caen en la mañana siguiente (Day2)?
-        # El usuario aprobó el resultado anterior para 20:12 -> 09:27.
-        # Resultado previo: Ext Diurnas 0.0, Ext Nocturnas 2.65.
-        # Eso significa que TODO el exceso se consideró Extra Nocturna.
-        # Pero eso fue con mi lógica anterior que no distinguía Day2.
-        # Si queremos replicar el resultado "Noche", deberíamos clasificar Day 2 overflow como Nocturnas?
-        # O el usuario dijo "se muestran irregulares" para el caso noche recien ahora?
-        # "la casuistica anterior funciona todo correcto pero si ahora ingresamos valores con hora de ingreso de noche... irregulares"
-        # Significa que mi lógica anterior (Turno N function) estaba MAL para el usuario o BIEN?
-        # "Error solo existe para los que ingresaron en la manana".
-        # Entonces el turno noche NO tenía error antes?
-        # Voy a asumir que Turno Noche debe comportarse como Turno Noche estandar.
-        # En Turno Noche, las horas extras que invaden el día siguiente (después de jornada nocturna) suelen pagarse compuestas.
-        # Pero vamos a simplificar: Lo que sobre es Extra.
-        # Si sobra en zona diurna (net_day2), es extra diurna?
-        # O extra nocturna "extendida"? (A veces se paga como nocturna si es continuación).
-        # El usuario NO especificó regla compleja aquí, solo distinguir turnos.
-        # Voy a asignar extras según donde cayeron (Físicamente).
+        rem_day1 = net_day1 - ord_day1 
+        rem_night = net_night - ord_night_core 
+        rem_day2 = net_day2 - ord_night_ext 
         
         horas_extra_diurnas = rem_day1 + rem_day2
         horas_extra_nocturnas = rem_night
         
-        # AJUSTE: En el output del usuario "Correcto" para noche (o esperado):
-        # En la imagen 2 (Noche 20:12 -> 09:27), Extras Diurna = 0.65, Extras Nocturna = 2.00.
-        # Total Extras = 2.65.
-        # Mi codigo anterior daba: Ext Diurna 0.0, Ext Nocturna 2.65.
-        # La imagen muestra que SÍ hay desglose.
-        # 2.00 Nocturnas y 0.65 Diurnas.
-        # O sea que el exceso en la mañana (06:00 a 09:27) se prorrateó.
-        # 2 horas se pagaron como algo (quizás maximo extras nocturnas?) y el resto diurnas.
+        # Guardar fisicas para desglose %
+        phys_day_ext = horas_extra_diurnas
+        phys_night_ext = horas_extra_nocturnas
+        total_extras = phys_day_ext + phys_night_ext
         
-        # REGLA DEDUCIDA DE IMAGEN:
-        # Max 2 horas extras nocturnas? O Max 2 horas extras al 25%?
-        # En Peru: primeras 2h al 25%, resto al 35%.
-        # Pero aquí las label son "Extras Diurnas" y "Extras Nocturnas".
-        # Pareciera que hay una regla: "Hasta 2 horas extras pueden ser X".
-        # Si el turno acaba en día, las extras son diurnas físicas.
-        # ¿Por qué en la imagen salen 2.00 Nocturnas?
-        # Tal vez porque son continuación de noche?
-        # O tal vez el cálculo "Noche" considera todo como nocturno hasta cierto punto?
-        
-        # Voy a usar la lógica física:
-        # Day 2 empieza a las 06:00.
-        # Si turno acaba 09:27. Son 3.45 horas de día.
-        # Si se usaron horas de día para completar ordinarias...
-        # 20:12 a 06:00 = ~9.8h. Menos 1h ref = 8.8h.
-        # Ord (9.6) -> toma 8.8h de noche + 0.8h de día.
-        # Quedan (3.45 - 0.8) = 2.65h de Extras Diurnas Físicas.
-        # La imagen dice: 0.65 Diurnas y 2.00 Nocturnas.
-        # Total 2.65.
-        # ¡Es al revés! 2.00 Nocturnas. 
-        # Significa que de las 2.65h extras (que ocurren de día), 2.00 se pagan como Nocturnas.
-        # ¿Por qué? Quizás regla de "extensión de jornada nocturna" o simplemente "Primeras 2 horas extras siempre benefician al trabajador como nocturnas"?
-        # O "Primeras 2 horas extras tienen un recargo que aquí llaman Nocturnas"?
-        
-        # Voy a implementar la regla que se ve en la imagen:
-        # "Si es Turno Noche, transfiere hasta 2.0h de Extras Diurnas a Extras Nocturnas".
-        
-        if horas_extra_diurnas > 0:
-            transfer = min(2.0, horas_extra_diurnas)
-            horas_extra_nocturnas += transfer
-            horas_extra_diurnas -= transfer
+        # Variables desglose
+        he_diurnas_25 = 0.0
+        he_diurnas_35 = 0.0
+        he_nocturnas_25 = 0.0
+        he_nocturnas_35 = 0.0
+
+        # Regla Ajustada Turno Noche (Salida Columnas Extras Totales):
+        # Las Horas Extras se pagan como Nocturnas las primeras 2 horas.
+        # El resto se paga como Diurnas.
+        if total_extras > 0:
+            horas_extra_nocturnas = min(total_extras, 2.0)
+            horas_extra_diurnas = total_extras - horas_extra_nocturnas
+            
+            # Desglose Porcentual Turno Noche:
+            # Todas las extras se consideran Nocturnas para el bucket de % (Según imagen)
+            # Primeras 2h -> 25%, Resto -> 35%
+            he_nocturnas_25 = min(total_extras, 2.0)
+            he_nocturnas_35 = max(0, total_extras - 2.0)
             
     else: 
         # Lógica Turno MAÑANA (Day First / Morning Logic)
@@ -253,14 +220,30 @@ def calcular_horas(hi, hf, jornal):
         # Unificar raw day
         total_raw_day = raw_day1 + raw_day2
         
-        # Refrigerio (1h) de Dia
-        if total_raw_day >= 1:
-            net_day = total_raw_day - 1
-            net_night = raw_night
+        # Regla Usuario: "si la hora de ingreso esta entre 6:00 y 21:00 y la hora de salida es mayor a 22:00 
+        # la hora de cena o almuerzo (-1) deberia ser descontada para el turno noche"
+        
+        apply_night_deduction = (hi.hour >= 6) and (raw_night > 0)
+
+        if apply_night_deduction:
+            # Deduct from Night First
+            if raw_night >= deduction:
+                net_night = raw_night - deduction
+                net_day = total_raw_day
+            else:
+                 # Si no alcanza la noche, restar del dia
+                 remainder = deduction - raw_night
+                 net_night = 0
+                 net_day = max(0, total_raw_day - remainder)
         else:
-            net_day = 0
-            remainder = 1 - total_raw_day
-            net_night = max(0, raw_night - remainder)
+            # Refrigerio (deduction) de Dia
+            if total_raw_day >= deduction:
+                net_day = total_raw_day - deduction
+                net_night = raw_night
+            else:
+                net_day = 0
+                remainder = deduction - total_raw_day
+                net_night = max(0, raw_night - remainder)
             
         # Asignacion
         cap = max_ordinarias
@@ -277,6 +260,32 @@ def calcular_horas(hi, hf, jornal):
         
         horas_extra_diurnas = rem_day
         horas_extra_nocturnas = rem_night
+        
+        # Desglose Porcentual Turno Mañana:
+        # Cronológico: Mañana -> Noche.
+        # Primeras 2h del total -> 25%. Resto -> 35%.
+        # Llenamos buckets 25% con DayExt primero, luego NightExt.
+        
+        phys_day_ext = horas_extra_diurnas
+        phys_night_ext = horas_extra_nocturnas
+        
+        quota_25 = 2.0
+        
+        # 1. Fill 25% with Day
+        use_day_25 = min(phys_day_ext, quota_25)
+        he_diurnas_25 = use_day_25
+        quota_25 -= use_day_25
+        rem_day = phys_day_ext - use_day_25
+        
+        # 2. Fill 25% with Night (if any quota left)
+        use_night_25 = min(phys_night_ext, quota_25)
+        he_nocturnas_25 = use_night_25
+        # quota_25 -= use_night_25 (Not needed anymore)
+        rem_night = phys_night_ext - use_night_25
+        
+        # 3. Rest goes to 35%
+        he_diurnas_35 = rem_day
+        he_nocturnas_35 = rem_night
 
     return {
         "horas_reales": round(horas_reales, 2),
@@ -284,6 +293,10 @@ def calcular_horas(hi, hf, jornal):
         "horas_nocturnas": round(horas_nocturnas, 2),
         "horas_extra_diurnas": round(horas_extra_diurnas, 2),
         "horas_extra_nocturnas": round(horas_extra_nocturnas, 2),
+        "he_diurnas_25": round(he_diurnas_25, 2),
+        "he_diurnas_35": round(he_diurnas_35, 2),
+        "he_nocturnas_25": round(he_nocturnas_25, 2),
+        "he_nocturnas_35": round(he_nocturnas_35, 2),
     }
 
 
@@ -362,11 +375,15 @@ def process_uploaded_file(contents, filename):
                         res["horas_diurnas"], 
                         res["horas_nocturnas"], 
                         res["horas_extra_diurnas"], 
-                        res["horas_extra_nocturnas"]
+                        res["horas_extra_nocturnas"],
+                        res["he_diurnas_25"],
+                        res["he_diurnas_35"],
+                        res["he_nocturnas_25"],
+                        res["he_nocturnas_35"]
                     ])
                 except Exception as e:
                     # Fallback for bad rows
-                    return pd.Series([0, 0, 0, 0, 0])
+                    return pd.Series([0, 0, 0, 0, 0, 0, 0, 0, 0])
 
             df[[
                 "HRS DE TRABAJO REALES 2",
@@ -374,9 +391,13 @@ def process_uploaded_file(contents, filename):
                 "HORAS NOCTURNAS",
                 "HORAS EXTRAS DIURNAS",
                 "HORAS EXTRAS NOCTURNAS",
+                "HE DIURNAS 25%",
+                "HE DIURNAS 35%",
+                "HE NOCTURNAS 25%",
+                "HE NOCTURNAS 35%"
              ]] = df.apply(safe_calc, axis=1)
             
-            print(df.head())
+            
             # convert time column to string for json serialization
             df["HI (BIOMETRICO)"] = df["HI (BIOMETRICO)"].astype(str)
             df["HF (BIOMETRICO)"] = df["HF (BIOMETRICO)"].astype(str)
