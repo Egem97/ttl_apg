@@ -58,6 +58,7 @@ def load_data_cosecha_campo():
             13, 
             "GO ALMACEN MATERIA PRIMA",
             44,
+            
             "GOL"
         ]
         df['LOTE'] = df['LOTE'].str.replace("-1", "I")

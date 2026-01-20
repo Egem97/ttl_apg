@@ -88,15 +88,11 @@ def calcular_horas(hi, hf, jornal):
     duration_raw = (hf - hi).total_seconds() / 3600
 
     # Determinar deducción de refrigerio
-    # Regla: Si HI y HF están entre 06:00 y 12:00, y dura menos de 5h -> No reducción (0h)
-    # En cualquier otro caso -> Reducción de 1h
-    
-    limit_start = datetime.combine(hi.date(), time(6, 0))
-    limit_end = datetime.combine(hi.date(), time(12, 0))
+    # Regla: Si las horas trabajadas (duration_raw) son menores a 5 horas -> No reducción (0h)
+    # Esto aplica tanto para turno MAÑANA como NOCHE
     
     deduction = 1.0
-    # Verificamos si todo el intervalo cae dentro de 06:00 - 12:00
-    if hi >= limit_start and hf <= limit_end and duration_raw < 5:
+    if duration_raw < 5:
         deduction = 0.0
 
     # Horas reales (menos refrigerio/deducción)
@@ -152,16 +148,24 @@ def calcular_horas(hi, hf, jornal):
         # Lógica Turno NOCHE (Night First / Special Allocation)
         
         # Refrigerio (deduction) se resta de Noche
+        # Refrigerio (deduction) se resta de Noche, luego de Day2, y finalmente de Day1
         if raw_night >= deduction:
             net_night = raw_night - deduction
             net_day2 = raw_day2
+            net_day1 = raw_day1
         else:
-             # Si no hay suficiente noche, restar del dia post
+             # Si no hay suficiente noche, restar del dia post (Day 2)
              remainder = deduction - raw_night
              net_night = 0
-             net_day2 = max(0, raw_day2 - remainder)
              
-        net_day1 = raw_day1 
+             if raw_day2 >= remainder:
+                 net_day2 = raw_day2 - remainder
+                 net_day1 = raw_day1
+             else:
+                 # Si tampoco alcanza dia post, restar de dia pre (Day 1)
+                 remainder -= raw_day2
+                 net_day2 = 0
+                 net_day1 = max(0, raw_day1 - remainder) 
         
         # Asignacion Ordinarias
         cap = max_ordinarias
@@ -201,18 +205,45 @@ def calcular_horas(hi, hf, jornal):
         he_nocturnas_25 = 0.0
         he_nocturnas_35 = 0.0
 
-        # Regla Ajustada Turno Noche (Salida Columnas Extras Totales):
-        # Las Horas Extras se pagan como Nocturnas las primeras 2 horas.
-        # El resto se paga como Diurnas.
         if total_extras > 0:
-            horas_extra_nocturnas = min(total_extras, 2.0)
-            horas_extra_diurnas = total_extras - horas_extra_nocturnas
+            # Lógica de distribución de extras:
+            # 1. Las primeras 2 horas se pagan como Nocturnas (25%) independientemente de si son fisicamente dia o noche.
+            # 2. El excedente (>2h) respeta su naturaleza fisica (Dia -> Diurna 35%, Noche -> Nocturna 35%).
             
-            # Desglose Porcentual Turno Noche:
-            # Todas las extras se consideran Nocturnas para el bucket de % (Según imagen)
-            # Primeras 2h -> 25%, Resto -> 35%
-            he_nocturnas_25 = min(total_extras, 2.0)
-            he_nocturnas_35 = max(0, total_extras - 2.0)
+            quota_25 = 2.0
+            
+            # Copias de remanentes fisicos
+            curr_day1 = rem_day1
+            curr_night = rem_night
+            curr_day2 = rem_day2
+            
+            # 1. Pre-Night Day (Si hubiese) -> Consume quota 25% (paga como Nocturna)
+            take = min(curr_day1, quota_25)
+            he_nocturnas_25 += take
+            quota_25 -= take
+            curr_day1 -= take
+            # Resto a Diurna 35%
+            he_diurnas_35 += curr_day1
+            
+            # 2. Night -> Consume quota 25%
+            take = min(curr_night, quota_25)
+            he_nocturnas_25 += take
+            quota_25 -= take
+            curr_night -= take
+            # Resto a Nocturna 35%
+            he_nocturnas_35 += curr_night
+            
+            # 3. Post-Night Day -> Consume quota 25% (paga como Nocturna)
+            take = min(curr_day2, quota_25)
+            he_nocturnas_25 += take
+            quota_25 -= take
+            curr_day2 -= take
+            # Resto a Diurna 35%
+            he_diurnas_35 += curr_day2
+            
+            # Actualizar sumarios
+            horas_extra_nocturnas = he_nocturnas_25 + he_nocturnas_35
+            horas_extra_diurnas = he_diurnas_25 + he_diurnas_35
             
     else: 
         # Lógica Turno MAÑANA (Day First / Morning Logic)
@@ -338,13 +369,15 @@ def process_uploaded_file(contents, filename):
             def safe_calc(row):
                 # Ensure input is HH:MM string
                 def clean(t): 
-                    if pd.isna(t) or t == "": return "00:00"
+                    if pd.isna(t) or t == "" or str(t).strip() == "-": return None
                     
                     # Already a time/datetime object
                     if hasattr(t, 'strftime'):
                         return t.strftime("%H:%M")
                     
                     s = str(t).strip()
+                    if not s or s == "-": return None
+
                     try:
                         # Try parsing with pandas (handles "9:00", "09:00:00", "2024-01-01 9:00")
                         # This is much safer than s[:5] which fails on "9:00:00" -> "9:00:"
@@ -358,7 +391,7 @@ def process_uploaded_file(contents, filename):
                         except:
                            pass
                     # If all else fails
-                    return "00:00"
+                    return None
                 
                 # Validate jornal
                 try: 
@@ -368,8 +401,14 @@ def process_uploaded_file(contents, filename):
                 if j not in [5, 6]: 
                     j = 6
                 
+                hi_clean = clean(row["HI (BIOMETRICO)"])
+                hf_clean = clean(row["HF (BIOMETRICO)"])
+
+                if hi_clean is None or hf_clean is None:
+                    return pd.Series([0, 0, 0, 0, 0, 0, 0, 0, 0])
+
                 try:
-                    res = calcular_horas(clean(row["HI (BIOMETRICO)"]), clean(row["HF (BIOMETRICO)"]), j)
+                    res = calcular_horas(hi_clean, hf_clean, j)
                     return pd.Series([
                         res["horas_reales"], 
                         res["horas_diurnas"], 
