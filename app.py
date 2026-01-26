@@ -31,7 +31,7 @@ app = Dash(
     external_scripts=scripts,
     update_title=False,
     assets_folder='assets',  # Asegurarse de que assets_folder apunte a la carpeta correcta
-    title="Packing Tools"
+    title="APG Tools"
 )
 
 # Configurar ruta específica para el favicon

@@ -84,6 +84,30 @@ def create_navbar(data):
                         ),
                     ],
                 ),
+                dmc.NavLink(
+                    label="Finanzas",
+                    leftSection=get_icon(icon="tabler:table"),
+                    childrenOffset=28,
+                    opened=False,
+                    children=[
+                        dmc.NavLink(
+                            leftSection=get_icon(icon="tabler:data-table"),
+                            label="TXT Detracciones",
+                            id = "navlink-dashboard",
+                            active="exact",
+                            href="/apg/txt_detracciones"
+                        ),
+                        dmc.NavLink(
+                            leftSection=get_icon(icon="tabler:data-table"),
+                            label="Sunat Oracle Det",
+                            id = "navlink-dashboard",
+                            active="exact",
+                            href="/apg/sunat_oracle_det"
+                        ),
+                    ],
+                ),
+                
+               
             ],
             p=0,
         )

@@ -69,9 +69,11 @@ def load_data_cosecha_campo():
             '-' + 
             df['LOTE'].str[5:].str.zfill(5)
         )
-        
+        df['KILOS BRUTOS']  = df['KILOS BRUTOS'].round(2)
+        df['DESCARTE'] = df['DESCARTE'].round(2)
         
         df['KILOS NETOS'] = df['KILOS BRUTOS'] - df['DESCARTE']
+        df['KILOS NETOS'] = df['KILOS NETOS'].round(2)
         df = df[[
             "MES","SEMANA","FECHA","FUNDO","MODULO","LOTE","PARCELA","KILOS BRUTOS","DESCARTE","KILOS NETOS","SUBSIDIARIA","COD_SUBSIDIARIA","ALMACEN","COD_ALMACEN"
         ]]
