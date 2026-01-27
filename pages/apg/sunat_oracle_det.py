@@ -137,15 +137,18 @@ def create_custom_layout():
                     },
                     multiple=False
                 ),
+                
+                html.Div(id='sunat-header-info', style={'marginTop': '20px'}),
+                html.Div(id='sunat-detail-table', style={'marginTop': '20px'})
                
             ], size=6),
             Column([
-                dmc.Text("Archivo Oracle:", fw=500, size="sm", mb=5),
+                dmc.Text("Archivo Oracle (CSV):", fw=500, size="sm", mb=5),
                 dcc.Upload(
                     id='upload-data-oracle',
                     children=html.Div([
                         'Drag and Drop or ',
-                        html.A('Select Files')
+                        html.A('Select CSV Files')
                     ]),
                     style={
                         'height': '60px',
@@ -156,25 +159,15 @@ def create_custom_layout():
                         'textAlign': 'center',
                         'margin': '10px'
                     },
-                    multiple=False
+                    multiple=False,
+                    accept='.csv'
                 ),
-               
+                html.Div(id='oracle-table', style={'marginTop': '20px'}),
+                html.Div(id='oracle-upload-status', style={'marginTop': '10px'})
             ], size=6)
         ]),
         
-        # Header Information Section
-        Row([
-            Column([
-                html.Div(id='sunat-header-info', style={'marginTop': '20px'})
-            ], size=12)
-        ]),
         
-        # Detail Data Table Section
-        Row([
-            Column([
-                html.Div(id='sunat-detail-table', style={'marginTop': '20px'})
-            ], size=12)
-        ]),
         
         Row([
             Column([
@@ -212,9 +205,6 @@ def process_sunat_file(contents, filename):
     
     # Create header display
     header_display = dmc.Card([
-        dmc.Title("SISTEMA DE PAGO DE OBLIGACIONES TRIBUTARIAS (SPOT)", order=4, mb=10),
-        dmc.Title("CONSTANCIA DE DEPOSITO MASIVO", order=5, mb=20, c="dimmed"),
-        dmc.Divider(mb=15),
         dmc.Title("Datos de Cabecera", order=5, mb=15),
         dmc.Grid([
             dmc.GridCol([
@@ -255,7 +245,8 @@ def process_sunat_file(contents, filename):
     # Create DataFrame from details
     if details_data:
         df = pd.DataFrame(details_data)
-        
+        df["Fecha Pago"] = header_data.get('Fecha y hora de pago', 'N/A')
+        df["Fecha Pago"] = pd.to_datetime(df["Fecha Pago"]).dt.strftime('%Y-%m-%d')
         # Create AgGrid table
         detail_table = html.Div([
             dmc.Title("Datos de Detalle", order=5, mb=15),
@@ -289,3 +280,125 @@ def process_sunat_file(contents, filename):
         return header_display, detail_table, store_data
     else:
         return header_display, dmc.Alert("No se encontraron datos de detalle", color="yellow"), {'header': header_data, 'details': []}
+
+
+# Callback to process uploaded Oracle CSV file
+@callback(
+    [Output('oracle-table', 'children'),
+     Output('oracle-upload-status', 'children')],
+    [Input('upload-data-oracle', 'contents')],
+    [State('upload-data-oracle', 'filename')]
+)
+def process_oracle_csv(contents, filename):
+    if contents is None:
+        return None, None
+    
+    # Expected columns from the reference CSV
+    expected_columns = [
+        'ID interno', 'Fecha', 'Tipo', 'Nº DOC Pago', 'Nota (principal)', 
+        'Detracción relacionada', 'Número de documento', 'Nota (principal)', 
+        'Nombre', 'TXT generado', 'Moneda', 'Importe Pagado', 
+        'Factura relacionada', 'Subsidiaria', 'Nombre', 
+        'GD NUMERO DEPOSITO', 'GD FECHA DE PAGO'
+    ]
+    
+    try:
+        # Validate file extension
+        if not filename.lower().endswith('.csv'):
+            return None, dmc.Alert(
+                "Error: Solo se permiten archivos CSV",
+                color="red",
+                title="Formato de archivo incorrecto"
+            )
+        
+        # Parse the CSV file
+        content_string = contents.split(',')[1]
+        decoded = base64.b64decode(content_string)
+        
+        # Try different encodings
+        try:
+            text = decoded.decode('utf-8')
+        except:
+            try:
+                text = decoded.decode('latin-1')
+            except:
+                return None, dmc.Alert(
+                    "Error: No se pudo decodificar el archivo",
+                    color="red",
+                    title="Error de codificación"
+                )
+        
+        # Read CSV into DataFrame
+        df = pd.read_csv(io.StringIO(text))
+        
+        # Validate column structure
+        if len(df.columns) != len(expected_columns):
+            return None, dmc.Alert(
+                f"Error: El archivo debe tener {len(expected_columns)} columnas. Se encontraron {len(df.columns)} columnas.",
+                color="red",
+                title="Estructura incorrecta"
+            )
+        
+        # Check if column names match (case-insensitive)
+        df_columns_lower = [col.strip().lower() for col in df.columns]
+        expected_columns_lower = [col.strip().lower() for col in expected_columns]
+        
+        # Note: There are duplicate column names in the expected structure
+        # We'll just validate the count for now
+        if df.empty:
+            return None, dmc.Alert(
+                "El archivo CSV está vacío",
+                color="yellow",
+                title="Advertencia"
+            )
+        
+        # Create AgGrid table
+        oracle_table = html.Div([
+            dmc.Title(f"Datos de Oracle - {filename}", order=5, mb=15),
+            dmc.Text(f"Total de registros: {len(df)}", size="sm", mb=10, fw=500),
+            AgGrid(
+                id='oracle-data-grid',
+                rowData=df.to_dict('records'),
+                columnDefs=[
+                    {
+                        "field": col, 
+                        "filter": True, 
+                        "sortable": True, 
+                        "resizable": True,
+                        "headerName": col
+                    } for col in df.columns
+                ],
+                columnSize="sizeToFit",
+                dashGridOptions={
+                    "animateRows": True,
+                    "pagination": True,
+                    "paginationPageSize": 20,
+                    "defaultColDef": {
+                        "resizable": True,
+                        "minWidth": 100
+                    }
+                },
+                style={"height": "500px"},
+            )
+        ])
+        
+        status = dmc.Alert(
+            f"Archivo cargado exitosamente: {len(df)} registros",
+            color="green",
+            title="✓ Éxito"
+        )
+        
+        return oracle_table, status
+        
+    except pd.errors.ParserError as e:
+        return None, dmc.Alert(
+            f"Error al parsear el CSV: {str(e)}",
+            color="red",
+            title="Error de formato CSV"
+        )
+    except Exception as e:
+        return None, dmc.Alert(
+            f"Error inesperado: {str(e)}",
+            color="red",
+            title="Error"
+        )
