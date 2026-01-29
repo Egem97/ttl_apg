@@ -94,9 +94,6 @@ def transform_line(line, line_idx, batch_code):
     
     # Lógica para Cabecera 
     if clean_line.startswith('*'):
-        if len(clean_line) >= 53:
-            new_header = clean_line[:47] + batch_code + clean_line[53:]
-            return new_header + '\r\n'
         return clean_line + '\r\n'
         
     # Lógica para Detalle
@@ -108,13 +105,14 @@ def transform_line(line, line_idx, batch_code):
     return clean_line + '\r\n'
 
 def generate_filename(header_line, batch_code):
-    # User Request: D + RUC + periodo(lote), ejemplo D20612997285260123
+    # User Request: D + RUC + "-" + codigo_cabecera
     # Header Start: *
     # RUC: Pos 1-12 (11 chars)
     try:
         if header_line.startswith('*'):
              ruc = header_line[1:12]
-             return f"D{ruc}{batch_code}.txt"
+             header_code = header_line[47:53]
+             return f"D{ruc}{header_code}.txt"
         return f"salida_{batch_code}.txt"
     except:
         return f"salida_{batch_code}.txt"

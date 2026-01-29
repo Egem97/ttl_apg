@@ -167,14 +167,22 @@ def create_custom_layout():
             ], size=6)
         ]),
         
-        
+        # Nueva sección para la tabla de matching
+        Row([
+            Column([
+                html.Div(id='matching-table', style={'marginTop': '30px'})
+            ], size=12)
+        ]),
         
         Row([
             Column([
                 dmc.Group([
-                    dmc.Button("Descargar Procesados (.txt/.zip)", id="btn-download-sunat_oracle_det"),
+                    dmc.Button("Descargar csv", id="btn-download-sunat_oracle_det"),
                     dcc.Download(id="download-dataframe-xlsx-sunat_oracle_det"),
                     dcc.Store(id="sunat_oracle_det-store"),
+                    dcc.Store(id="sunat-data-store"),  # Store para datos de SUNAT
+                    dcc.Store(id="oracle-data-store"),  # Store para datos de Oracle
+                    dcc.Store(id="matching-data-store"),  # Store para datos del matching
                 ], mb=10),
                 
             ])
@@ -188,72 +196,50 @@ layout = create_custom_layout()
 @callback(
     [Output('sunat-header-info', 'children'),
      Output('sunat-detail-table', 'children'),
-     Output('sunat_oracle_det-store', 'data')],
+     Output('sunat_oracle_det-store', 'data'),
+     Output('sunat-data-store', 'data')],
     [Input('upload-data-txt', 'contents')],
     [State('upload-data-txt', 'filename')]
 )
 def process_sunat_file(contents, filename):
     if contents is None:
-        return None, None, None
+        return None, None, None, None
     
     # Parse the file
     content_string = contents.split(',')[1]
     header_data, details_data = parse_sunat_txt(content_string)
     
     if header_data is None or details_data is None:
-        return dmc.Alert("Error al procesar el archivo", color="red"), None, None
+        return dmc.Alert("Error al procesar el archivo", color="red"), None, None, None
     
     # Create header display
-    header_display = dmc.Card([
-        dmc.Title("Datos de Cabecera", order=5, mb=15),
-        dmc.Grid([
-            dmc.GridCol([
-                dmc.Text("Número de operación:", fw=600, size="sm"),
-                dmc.Text(header_data.get('Número de operación', 'N/A'), size="sm", mb=10)
-            ], span=6),
-            dmc.GridCol([
-                dmc.Text("Fecha y hora de pago:", fw=600, size="sm"),
-                dmc.Text(header_data.get('Fecha y hora de pago', 'N/A'), size="sm", mb=10)
-            ], span=6),
-            dmc.GridCol([
-                dmc.Text("Archivo:", fw=600, size="sm"),
-                dmc.Text(header_data.get('Archivo', 'N/A'), size="sm", mb=10)
-            ], span=6),
-            dmc.GridCol([
-                dmc.Text("Lote:", fw=600, size="sm"),
-                dmc.Text(header_data.get('Lote', 'N/A'), size="sm", mb=10)
-            ], span=6),
-            dmc.GridCol([
-                dmc.Text("RUC del Adquiriente:", fw=600, size="sm"),
-                dmc.Text(header_data.get('RUC del Adquiriente', 'N/A'), size="sm", mb=10)
-            ], span=6),
-            dmc.GridCol([
-                dmc.Text("Razón Social del Adquiriente:", fw=600, size="sm"),
-                dmc.Text(header_data.get('Razón Social del Adquiriente', 'N/A'), size="sm", mb=10)
-            ], span=6),
-            dmc.GridCol([
-                dmc.Text("Número de depósitos:", fw=600, size="sm"),
-                dmc.Text(header_data.get('Número de depósitos', 'N/A'), size="sm", mb=10)
-            ], span=6),
-            dmc.GridCol([
-                dmc.Text("Monto total:", fw=600, size="sm"),
-                dmc.Text(header_data.get('Monto total', 'N/A'), size="sm", mb=10)
-            ], span=6),
-        ])
-    ], withBorder=True, shadow="sm", p="lg", mb=20)
+    header_display = html.Div()
     
     # Create DataFrame from details
     if details_data:
         df = pd.DataFrame(details_data)
         df["Fecha Pago"] = header_data.get('Fecha y hora de pago', 'N/A')
-        df["Fecha Pago"] = pd.to_datetime(df["Fecha Pago"]).dt.strftime('%Y-%m-%d')
+        df["Fecha Pago"] = pd.to_datetime(df["Fecha Pago"]).dt.strftime('%d/%m/%Y')
+        
+        # Crear columna factura_limpia para el matching
+        # Formato: "F001 00000101" -> ya viene en el formato correcto desde SUNAT
+        df['factura_limpia'] = df['Número de Comprobante']
+        
+        # Renombrar columna para el matching
+        df = df.rename(columns={'Número Documento del Proveedor': 'ruc'})
+        
+        df_display = df [[
+            'Número de constancia', 
+       'ruc', 'Nombre/Razón Social del Proveedor',
+       'Monto depósito', 'Periodo Tributario','Número de Comprobante', 'Fecha Pago'
+        ]]
         # Create AgGrid table
         detail_table = html.Div([
-            dmc.Title("Datos de Detalle", order=5, mb=15),
+            dmc.Title(f"Datos de Detalle - Total registros: {df.shape[0]}", order=5, mb=15),
             AgGrid(
                 id='sunat-detail-grid',
-                rowData=df.to_dict('records'),
-                columnDefs=[{"field": col, "filter": True, "sortable": True, "resizable": True} for col in df.columns],
+                rowData=df_display.to_dict('records'),
+                columnDefs=[{"field": col, "filter": True, "sortable": True, "resizable": True} for col in df_display.columns],
                 columnSize="sizeToFit",
                 dashGridOptions={
                 
@@ -268,6 +254,7 @@ def process_sunat_file(contents, filename):
                 }
             },
                 style={"height": "400px"},
+                className="ag-theme-quartz compact"
             )
         ])
         
@@ -277,39 +264,54 @@ def process_sunat_file(contents, filename):
             'details': details_data
         }
         
-        return header_display, detail_table, store_data
+        # Guardar DataFrame procesado para el matching
+        sunat_data_store = df.to_dict('records')
+        
+        return header_display, detail_table, store_data, sunat_data_store
     else:
-        return header_display, dmc.Alert("No se encontraron datos de detalle", color="yellow"), {'header': header_data, 'details': []}
+        return header_display, dmc.Alert("No se encontraron datos de detalle", color="yellow"), {'header': header_data, 'details': []}, None
+
 
 
 # Callback to process uploaded Oracle CSV file
 @callback(
     [Output('oracle-table', 'children'),
-     Output('oracle-upload-status', 'children')],
+     Output('oracle-upload-status', 'children'),
+     Output('oracle-data-store', 'data')],
     [Input('upload-data-oracle', 'contents')],
     [State('upload-data-oracle', 'filename')]
 )
 def process_oracle_csv(contents, filename):
-    if contents is None:
-        return None, None
+        subsidiary = pd.read_excel('oracle_sandbox.xlsx', sheet_name='Subsidiary')
+        proveedor = pd.read_excel('oracle_sandbox.xlsx', sheet_name='Proveedor')
+        proveedor = proveedor.rename(columns={'altname':'name_proveedor','custentity_gd_documento':'ruc'})
+        subsidiary_dict = (
+            subsidiary
+            .set_index('name_subsidiary')['id_subsidiary']
+            .to_dict()
+        )
+        proveedor_dict = (
+            proveedor
+            .set_index('name_proveedor')['ruc']
+            .to_dict()
+        )
+        if contents is None:
+            return None, None, None
+        
+        # Columnas originales esperadas del CSV de Oracle
+        original_columns = [
+            'ID interno', 'Fecha', 'Número de documento',  'Moneda', 'Importe Pagado',
+            'Factura relacionada', 'Subsidiaria','Proveedor'
+        ]
     
-    # Expected columns from the reference CSV
-    expected_columns = [
-        'ID interno', 'Fecha', 'Tipo', 'Nº DOC Pago', 'Nota (principal)', 
-        'Detracción relacionada', 'Número de documento', 'Nota (principal)', 
-        'Nombre', 'TXT generado', 'Moneda', 'Importe Pagado', 
-        'Factura relacionada', 'Subsidiaria', 'Nombre', 
-        'GD NUMERO DEPOSITO', 'GD FECHA DE PAGO'
-    ]
     
-    try:
         # Validate file extension
         if not filename.lower().endswith('.csv'):
             return None, dmc.Alert(
                 "Error: Solo se permiten archivos CSV",
                 color="red",
                 title="Formato de archivo incorrecto"
-            )
+            ), None
         
         # Parse the CSV file
         content_string = contents.split(',')[1]
@@ -326,10 +328,40 @@ def process_oracle_csv(contents, filename):
                     "Error: No se pudo decodificar el archivo",
                     color="red",
                     title="Error de codificación"
-                )
+                ), None
         
         # Read CSV into DataFrame
         df = pd.read_csv(io.StringIO(text))
+        df = df.rename(columns={'Nombre.1':'Proveedor'})
+        print(df)
+        # Filtrar solo las columnas originales que necesitamos
+        df = df[original_columns]
+        df['Subsidiaria'] = df['Subsidiaria'].str.split(':').str[-1].str.strip()
+        df['id_subsidiary'] = df['Subsidiaria'].map(subsidiary_dict)
+        df['ruc'] = df['Proveedor'].map(proveedor_dict)
+        # Crear columna factura_limpia
+        # Formato original: "Factura #F001-00000009"
+        # Formato deseado: "F001 00000009" (serie de 4 chars + espacio + número con padding de 8 dígitos)
+        df['factura_limpia'] = df['Factura relacionada'].str.replace('Factura #', '', regex=False).str.replace('-', ' ', regex=False)
+        
+        # Crear columnas temporales para serie y numero
+        df[['serie', 'numero']] = df['factura_limpia'].str.split(' ', n=1, expand=True)
+        
+        # Identificar filas válidas (que tienen exactamente un espacio, es decir, serie y numero separados)
+        mask_valida = df['numero'].notna()
+        
+        # Formatear solo las filas válidas: serie (primeros 4 caracteres) + espacio + número (padding de 8 dígitos)
+        df.loc[mask_valida, 'factura_limpia'] = (
+            df.loc[mask_valida, 'serie'].str[:4] + ' ' +
+            df.loc[mask_valida, 'numero'].str.zfill(8)
+        )
+        
+        # Eliminar columnas temporales
+        df = df.drop(columns=['serie', 'numero'], errors='ignore')
+        
+        # Columnas finales esperadas (incluyendo factura_limpia)
+        expected_columns = original_columns + ['factura_limpia','id_subsidiary','ruc']
+        
         
         # Validate column structure
         if len(df.columns) != len(expected_columns):
@@ -337,7 +369,7 @@ def process_oracle_csv(contents, filename):
                 f"Error: El archivo debe tener {len(expected_columns)} columnas. Se encontraron {len(df.columns)} columnas.",
                 color="red",
                 title="Estructura incorrecta"
-            )
+            ), None
         
         # Check if column names match (case-insensitive)
         df_columns_lower = [col.strip().lower() for col in df.columns]
@@ -350,12 +382,12 @@ def process_oracle_csv(contents, filename):
                 "El archivo CSV está vacío",
                 color="yellow",
                 title="Advertencia"
-            )
+            ), None
         
         # Create AgGrid table
         oracle_table = html.Div([
-            dmc.Title(f"Datos de Oracle - {filename}", order=5, mb=15),
-            dmc.Text(f"Total de registros: {len(df)}", size="sm", mb=10, fw=500),
+            dmc.Title(f"Datos de Oracle - Total de registros: {len(df)}", order=5, mb=15),
+          
             AgGrid(
                 id='oracle-data-grid',
                 rowData=df.to_dict('records'),
@@ -371,34 +403,106 @@ def process_oracle_csv(contents, filename):
                 columnSize="sizeToFit",
                 dashGridOptions={
                     "animateRows": True,
-                    "pagination": True,
-                    "paginationPageSize": 20,
+                    
                     "defaultColDef": {
                         "resizable": True,
                         "minWidth": 100
                     }
                 },
-                style={"height": "500px"},
+                style={"height": "400px"},
+                className="ag-theme-quartz compact"
             )
         ])
         
-        status = dmc.Alert(
-            f"Archivo cargado exitosamente: {len(df)} registros",
-            color="green",
-            title="✓ Éxito"
-        )
+        # Guardar DataFrame procesado para el matching
+        oracle_data_store = df.to_dict('records')
         
-        return oracle_table, status
+        return oracle_table, None, oracle_data_store
         
-    except pd.errors.ParserError as e:
-        return None, dmc.Alert(
-            f"Error al parsear el CSV: {str(e)}",
-            color="red",
-            title="Error de formato CSV"
+    
+
+# Callback para crear la tabla de matching
+@callback(
+    [Output('matching-table', 'children'),
+     Output('matching-data-store', 'data')],
+    [Input('sunat-data-store', 'data'),
+     Input('oracle-data-store', 'data')]
+)
+def create_matching_table(sunat_data, oracle_data):
+    if sunat_data is None or oracle_data is None:
+        return None, None
+    
+    # Convertir los datos a DataFrames
+    df_sunat = pd.DataFrame(sunat_data)
+    df_oracle = pd.DataFrame(oracle_data)
+   
+    # Hacer el merge por ruc y factura_limpia
+    df_merged = pd.merge(
+        
+        df_oracle,
+        df_sunat,
+        on=['ruc', 'ruc'],
+        how='left',
+        suffixes=('_oracle', '_sunat')
+    )
+    df_merged["GD NUMERO DEPOSITO"]=df_merged["Número de constancia"].fillna("-")
+    df_merged["GD FECHA DE PAGO"]=df_merged["Fecha Pago"].fillna("-")
+    print(df_merged.columns)
+    # Crear la tabla de matching
+    matching_table = html.Div([
+        dmc.Title(f"Tabla de Matching - Total de coincidencias: {len(df_merged)}", order=4, mb=15, style={'marginTop': '20px'}),
+        AgGrid(
+            id='matching-data-grid',
+            rowData=df_merged.to_dict('records'),
+            columnDefs=[
+                {
+                    "field": col,
+                    "filter": True,
+                    "sortable": True,
+                    "resizable": True,
+                    "headerName": col
+                } for col in df_merged.columns
+            ],
+            columnSize="sizeToFit",
+            dashGridOptions={
+                "animateRows": True,
+                "defaultColDef": {
+                    "resizable": True,
+                    "minWidth": 100
+                }
+            },
+            style={"height": "500px"},
+            className="ag-theme-quartz compact"
         )
-    except Exception as e:
-        return None, dmc.Alert(
-            f"Error inesperado: {str(e)}",
-            color="red",
-            title="Error"
-        )
+    ])
+    
+    # Guardar datos para descarga
+    matching_data_store = df_merged.to_dict('records')
+    
+    return matching_table, matching_data_store
+
+
+# Callback para descargar el CSV del matching
+@callback(
+    Output('download-dataframe-xlsx-sunat_oracle_det', 'data'),
+    Input('btn-download-sunat_oracle_det', 'n_clicks'),
+    State('matching-data-store', 'data'),
+    prevent_initial_call=True
+)
+def download_matching_csv(n_clicks, matching_data):
+    if matching_data is None or n_clicks is None:
+        return None
+    
+    # Convertir los datos a DataFrame
+    df = pd.DataFrame(matching_data)
+    
+    if df.empty:
+        return None
+    
+    # Generar nombre de archivo con timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"matching_sunat_oracle_{timestamp}.csv"
+    
+    # Descargar como CSV
+    return dcc.send_data_frame(df.to_csv, filename, index=False, encoding='utf-8-sig')
