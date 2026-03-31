@@ -104,6 +104,13 @@ def create_navbar(data):
                             active="exact",
                             href="/apg/sunat_oracle_det"
                         ),
+                        dmc.NavLink(
+                            leftSection=get_icon(icon="tabler:data-table"),
+                            label="BCP a Oracle",
+                            id = "navlink-bcp-oracle",
+                            active="exact",
+                            href="/apg/bcp-oracle"
+                        ),
                     ],
                 ),
                 
