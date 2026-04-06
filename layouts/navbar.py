@@ -106,10 +106,10 @@ def create_navbar(data):
                         ),
                         dmc.NavLink(
                             leftSection=get_icon(icon="tabler:data-table"),
-                            label="BCP a Oracle",
+                            label="Conciliación T",
                             id = "navlink-bcp-oracle",
                             active="exact",
-                            href="/apg/bcp-oracle"
+                            href="/apg/conciliacion-transform"
                         ),
                     ],
                 ),

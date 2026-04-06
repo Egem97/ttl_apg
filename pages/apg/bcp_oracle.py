@@ -10,7 +10,7 @@ from datetime import datetime
 
 dash.register_page(
     __name__,
-    path="/apg/bcp-oracle",
+    path="/apg/conciliacion-transform",
     title=PAGE_TITLE_PREFIX + "Conciliación BCP",
 )
 
@@ -39,8 +39,8 @@ layout = dmc.Container(
     size="lg",
     mt=40,
     children=[
-        dmc.Title("Conciliación BCP", order=2, fw=500, mb=10),
-        dmc.Text("Sube el archivo CSV de movimientos del BCP para visualizar una vista previa y descargarlo en la plantilla de Oracle.", c="dimmed", mb=30, size="sm"),
+        dmc.Title("Conciliación Transform", order=2, fw=500, mb=10),
+        dmc.Text("Sube el archivo CSV para visualizar una vista previa y descargarlo en la plantilla de Oracle.", c="dimmed", mb=30, size="sm"),
         
         dcc.Upload(
             id='upload-data-bcp',
@@ -116,7 +116,7 @@ def process_upload(contents, filename):
         oracle_df['NS Internal Customer Id'] = ''
         oracle_df['NS Customer Name'] = ''
         oracle_df['Invoice Number(s)'] = ''
-        
+        print(oracle_df.info())
         # Generar vista previa
         preview_table = dash_table.DataTable(
             data=oracle_df.head(10).to_dict('records'),
@@ -179,6 +179,7 @@ def process_upload(contents, filename):
 def download_data(n_clicks, data):
     if n_clicks and data:
         df = pd.DataFrame(data)
+        print(df["Transaction Id"].unique())
         filename = f"BCP_Oracle_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         return dcc.send_data_frame(df.to_csv, filename, index=False)
     return dash.no_update
