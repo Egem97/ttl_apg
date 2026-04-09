@@ -282,19 +282,19 @@ def process_sunat_file(contents, filename):
     [State('upload-data-oracle', 'filename')]
 )
 def process_oracle_csv(contents, filename):
-        subsidiary = pd.read_excel('oracle_sandbox.xlsx', sheet_name='Subsidiary')
-        proveedor = pd.read_excel('oracle_sandbox.xlsx', sheet_name='Proveedor')
-        proveedor = proveedor.rename(columns={'altname':'name_proveedor','custentity_gd_documento':'ruc'})
+        subsidiary = pd.read_excel('oracle_prod.xlsx', sheet_name='Subsidiary')
+        #proveedor = pd.read_excel('oracle_prod.xlsx', sheet_name='Proveedor')
+        #proveedor = proveedor.rename(columns={'altname':'name_proveedor','custentity_gd_documento':'ruc'})
         subsidiary_dict = (
             subsidiary
             .set_index('name_subsidiary')['id_subsidiary']
             .to_dict()
         )
-        proveedor_dict = (
-            proveedor
-            .set_index('name_proveedor')['ruc']
-            .to_dict()
-        )
+        #proveedor_dict = (
+        #    proveedor
+        #    .set_index('name_proveedor')['ruc']
+        #    .to_dict()
+        #)
         if contents is None:
             return None, None, None
         
@@ -333,12 +333,16 @@ def process_oracle_csv(contents, filename):
         # Read CSV into DataFrame
         df = pd.read_csv(io.StringIO(text))
         df = df.rename(columns={'Nombre.1':'Proveedor'})
-        print(df)
+        
+        df = df[df["ID interno"].notna()]
         # Filtrar solo las columnas originales que necesitamos
         df = df[original_columns]
         df['Subsidiaria'] = df['Subsidiaria'].str.split(':').str[-1].str.strip()
         df['id_subsidiary'] = df['Subsidiaria'].map(subsidiary_dict)
-        df['ruc'] = df['Proveedor'].map(proveedor_dict)
+        
+        df['ruc'] = df['Proveedor'].str[:11]#.map(proveedor_dict)
+        print("--------------------------------------")
+        print(df['ruc'].unique())
         # Crear columna factura_limpia
         # Formato original: "Factura #F001-00000009"
         # Formato deseado: "F001 00000009" (serie de 4 chars + espacio + número con padding de 8 dígitos)
