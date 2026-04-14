@@ -11,139 +11,438 @@ from datetime import datetime
 dash.register_page(
     __name__,
     path="/apg/conciliacion-transform",
-    title=PAGE_TITLE_PREFIX + "Conciliación BCP",
+    title=PAGE_TITLE_PREFIX + "Conciliación Bancaria",
 )
 
-def get_transaction_type(amount, utc):
+ORACLE_COLUMNS = [
+    'Date (MM/DD/YYYY)',
+    'Payer/Payee Name',
+    'Transaction Id',
+    'Transaction Type',
+    'Amount',
+    'Memo',
+    'NS Internal Customer Id',
+    'NS Customer Name',
+    'Invoice Number(s)',
+]
+
+BANK_OPTIONS = [
+    {"value": "BCP", "label": "BCP"},
+    {"value": "SCOTIABANK", "label": "Scotiabank"},
+    {"value": "BBVA", "label": "BBVA"},
+    {"value": "INTERBANK", "label": "Interbank"},
+    {"value": "NACION", "label": "Banco de la Nación"},
+]
+
+BANK_ACCEPT = {
+    "BCP": ".csv",
+    "SCOTIABANK": ".xls,.xlsx",
+    "BBVA": ".xls,.xlsx",
+    "INTERBANK": ".xls,.xlsx",
+    "NACION": ".xls,.xlsx",
+}
+
+
+def _empty_oracle_df():
+    return pd.DataFrame(columns=ORACLE_COLUMNS)
+
+
+def _finalize(oracle_df):
+    oracle_df = oracle_df.copy()
+    oracle_df['Amount'] = pd.to_numeric(oracle_df['Amount'], errors='coerce').fillna(0)
+    oracle_df['Amount'] = oracle_df['Amount'].map('{:.2f}'.format)
+    for c in ['Payer/Payee Name', 'NS Internal Customer Id', 'NS Customer Name', 'Invoice Number(s)']:
+        oracle_df[c] = ''
+    oracle_df['Transaction Id'] = oracle_df['Transaction Id'].fillna('').astype(str)
+    oracle_df['Memo'] = oracle_df['Memo'].fillna('').astype(str)
+    return oracle_df[ORACLE_COLUMNS]
+
+
+def _read_bytes_as_excel(decoded):
     try:
-        if isinstance(amount, str):
-            amt = float(amount.replace(',', ''))
-        else:
-            amt = float(amount)
-    except:
+        return pd.read_excel(io.BytesIO(decoded), sheet_name=None, header=None)
+    except Exception:
+        # Fallback: some "xls" files are actually HTML
+        tables = pd.read_html(io.BytesIO(decoded))
+        return {f"sheet{i}": t for i, t in enumerate(tables)}
+
+
+# -------------------- BCP --------------------
+def _bcp_type(amount, utc):
+    try:
+        amt = float(str(amount).replace(',', ''))
+    except Exception:
         amt = 0
-    
     utc = str(utc).strip()
-    fee_utcs = ['0101', '4991', '4923', '0909', '4032', '4997', '4936']
-    transfer_utcs = ['4406']
-    
-    if utc in fee_utcs:
+    if utc in ['0101', '4991', '4923', '0909', '4032', '4997', '4936']:
         return 'FEE'
-    if utc in transfer_utcs:
+    if utc in ['4406']:
         return 'TRANSFER'
-    if amt > 0:
-        return 'CREDIT'
-    return 'DEBIT'
+    return 'CREDIT' if amt > 0 else 'DEBIT'
+
+
+def process_bcp(decoded):
+    data_str = decoded.decode('latin-1')
+    df = pd.read_csv(io.StringIO(data_str), skiprows=4, dtype={'Operación - Número': str, "Monto": str})
+    df["Monto"] = df["Monto"].str.replace(',', '').astype(float)
+    df = df.dropna(subset=['Fecha', 'Monto'], how='all')
+    if '' in df.columns:
+        df = df.drop(columns=[''])
+
+    expected = ['Fecha', 'Descripción operación', 'Monto', 'Operación - Número', 'UTC']
+    missing = [c for c in expected if c not in df.columns]
+    if missing:
+        raise ValueError(f"Faltan columnas: {', '.join(missing)}")
+
+    temp = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
+    mask = temp.isnull()
+    if mask.any():
+        temp.loc[mask] = pd.to_datetime(df.loc[mask, 'Fecha'], errors='coerce')
+
+    out = _empty_oracle_df()
+    out['Date (MM/DD/YYYY)'] = temp.dt.strftime('%m/%d/%Y')
+    out['Transaction Id'] = df['Operación - Número'].fillna('').astype(str)
+    out['Transaction Type'] = df.apply(lambda r: _bcp_type(r['Monto'], r['UTC']), axis=1).values
+    out['Amount'] = pd.to_numeric(df['Monto'], errors='coerce').fillna(0).values
+    out['Memo'] = df['Descripción operación'].fillna('').values
+    return _finalize(out)
+
+
+# -------------------- Scotiabank --------------------
+def process_scotiabank(decoded):
+    sheets = _read_bytes_as_excel(decoded)
+    raw = next(iter(sheets.values()))
+    # Find header row containing 'Código' and 'Movimiento'
+    header_idx = None
+    for i, row in raw.iterrows():
+        vals = [str(x).strip() for x in row.values]
+        if 'Código' in vals and 'Movimiento' in vals and 'Debe' in vals:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("No se encontró la fila de cabecera en el archivo Scotiabank")
+
+    df = raw.iloc[header_idx + 1:].copy()
+    df.columns = raw.iloc[header_idx].values
+    df = df.loc[:, df.columns.notna()]
+    df = df.rename(columns=lambda c: str(c).strip())
+    # Drop totals / empty rows
+    df = df[df['Día'].notna()]
+    df = df[df['Código'].astype(str).str.strip().str.lower() != 'total:']
+    df = df[df['Código'].notna()]
+
+    def to_num(x):
+        try:
+            return float(str(x).replace(',', '').replace('$', '').strip() or 0)
+        except Exception:
+            return 0.0
+
+    debe = df['Debe'].map(to_num)
+    haber = df['Haber'].map(to_num)
+    codigo = df['Código'].astype(str).str.strip()
+
+    def row_type(cod, d, h):
+        if cod == '39':
+            return 'TRANSFER'
+        if h > 0:
+            return 'CREDIT'
+        return 'DEBIT'
+
+    amount = haber - debe  # Debe -> negative, Haber -> positive
+
+    fechas = pd.to_datetime(df['Día'], format='%d/%m/%Y', errors='coerce')
+    mask = fechas.isnull()
+    if mask.any():
+        fechas.loc[mask] = pd.to_datetime(df.loc[mask, 'Día'], errors='coerce')
+
+    out = _empty_oracle_df()
+    out['Date (MM/DD/YYYY)'] = fechas.dt.strftime('%m/%d/%Y').values
+    out['Transaction Id'] = df['Documento'].fillna('').astype(str).values
+    out['Transaction Type'] = [row_type(c, d, h) for c, d, h in zip(codigo, debe, haber)]
+    out['Amount'] = amount.values
+    out['Memo'] = df['Movimiento'].fillna('').astype(str).values
+    return _finalize(out)
+
+
+# -------------------- BBVA --------------------
+def process_bbva(decoded):
+    sheets = _read_bytes_as_excel(decoded)
+    raw = next(iter(sheets.values()))
+    header_idx = None
+    for i, row in raw.iterrows():
+        vals = [str(x).strip() for x in row.values]
+        if 'F. Operación' in vals and 'Importe' in vals and 'Concepto' in vals:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("No se encontró la fila de cabecera en el archivo BBVA")
+
+    df = raw.iloc[header_idx + 1:].copy()
+    df.columns = [str(c).strip() for c in raw.iloc[header_idx].values]
+    df = df[df['Código'].notna()]  # quita filas de saldo
+
+    codigo = df['Código'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+    importe = pd.to_numeric(df['Importe'], errors='coerce').fillna(0)
+
+    def row_type(cod, imp):
+        if cod == '527':
+            return 'FEE'
+        if cod == '690':
+            return 'TRANSFER'
+        return 'CREDIT' if imp > 0 else 'DEBIT'
+
+    fechas = pd.to_datetime(df['F. Operación'], errors='coerce')
+
+    out = _empty_oracle_df()
+    out['Date (MM/DD/YYYY)'] = fechas.dt.strftime('%m/%d/%Y').values
+    out['Transaction Id'] = df['Nº. Doc.'].fillna('').astype(str).values
+    out['Transaction Type'] = [row_type(c, i) for c, i in zip(codigo, importe)]
+    out['Amount'] = importe.values
+    out['Memo'] = df['Concepto'].fillna('').astype(str).values
+    return _finalize(out)
+
+
+# -------------------- Interbank --------------------
+def process_interbank(decoded):
+    sheets = _read_bytes_as_excel(decoded)
+    raw = next(iter(sheets.values()))
+    header_idx = None
+    for i, row in raw.iterrows():
+        vals = [str(x).strip() for x in row.values]
+        if 'Fecha de operación' in vals and 'Movimiento' in vals and 'Cargo' in vals:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("No se encontró la fila de cabecera en el archivo Interbank")
+
+    df = raw.iloc[header_idx + 1:].copy()
+    df.columns = [str(c).strip() for c in raw.iloc[header_idx].values]
+    df = df.loc[:, df.columns.notna() & (df.columns != 'nan')]
+    df = df[df['Fecha de operación'].notna()]
+
+    def to_num(x):
+        if pd.isna(x):
+            return 0.0
+        try:
+            return float(str(x).replace(',', '').strip() or 0)
+        except Exception:
+            return 0.0
+
+    cargo = df['Cargo'].map(to_num)
+    abono = df['Abono'].map(to_num)
+    # Cargo viene negativo, Abono positivo. Amount = cargo + abono (respeta signo del cargo)
+    amount = cargo + abono
+
+    tipo = ['CREDIT' if a > 0 else 'DEBIT' for a in amount]
+
+    fechas = pd.to_datetime(df['Fecha de operación'], format='%d/%m/%Y', errors='coerce')
+    mask = fechas.isnull()
+    if mask.any():
+        fechas.loc[mask] = pd.to_datetime(df.loc[mask, 'Fecha de operación'], errors='coerce')
+
+    nro = df['Nro. de operación'].astype(str).str.strip()
+    fallback_id = fechas.dt.strftime('%d%m%Y')
+    tx_id = [fb if (n in ('-', '', 'nan', 'None')) else n for n, fb in zip(nro, fallback_id)]
+
+    out = _empty_oracle_df()
+    out['Date (MM/DD/YYYY)'] = fechas.dt.strftime('%m/%d/%Y').values
+    out['Transaction Id'] = tx_id
+    out['Transaction Type'] = tipo
+    out['Amount'] = amount.values
+    out['Memo'] = df['Movimiento'].fillna('').astype(str).values
+    return _finalize(out)
+
+
+# -------------------- Banco de la Nación --------------------
+def process_nacion(decoded):
+    sheets = _read_bytes_as_excel(decoded)
+    raw = next(iter(sheets.values()))
+    header_idx = None
+    for i, row in raw.iterrows():
+        vals = [str(x).strip() for x in row.values]
+        if 'Fecha' in vals and 'Trans.' in vals and 'Documento' in vals:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("No se encontró la fila de cabecera en el archivo Banco de la Nación")
+
+    df = raw.iloc[header_idx + 1:].copy()
+    df.columns = [str(c).strip() for c in raw.iloc[header_idx].values]
+    df = df[df['Fecha'].notna()]
+
+    def to_num(x):
+        if pd.isna(x):
+            return 0.0
+        try:
+            return float(str(x).replace(',', '').strip() or 0)
+        except Exception:
+            return 0.0
+
+    cargo = df['Cargo'].map(to_num)
+    abono = df['Abono'].map(to_num)
+    amount = abono - cargo  # Cargo -> negative, Abono -> positive
+    tipo = ['CREDIT' if a > 0 else 'DEBIT' for a in amount]
+
+    fechas = pd.to_datetime(df['Fecha'], format='%Y.%m.%d', errors='coerce')
+    mask = fechas.isnull()
+    if mask.any():
+        fechas.loc[mask] = pd.to_datetime(df.loc[mask, 'Fecha'], errors='coerce')
+
+    out = _empty_oracle_df()
+    out['Date (MM/DD/YYYY)'] = fechas.dt.strftime('%m/%d/%Y').values
+    out['Transaction Id'] = df['Documento'].fillna('').astype(str).values
+    out['Transaction Type'] = tipo
+    out['Amount'] = amount.values
+    out['Memo'] = df['Trans.'].fillna('').astype(str).values
+    return _finalize(out)
+
+
+PROCESSORS = {
+    "BCP": process_bcp,
+    "SCOTIABANK": process_scotiabank,
+    "BBVA": process_bbva,
+    "INTERBANK": process_interbank,
+    "NACION": process_nacion,
+}
+
 
 layout = dmc.Container(
-    size="lg",
-    mt=40,
+    fluid=True,
+    mt=30,
+    px=30,
     children=[
-        dmc.Title("Conciliación Transform", order=2, fw=500, mb=10),
-        dmc.Text("Sube el archivo CSV para visualizar una vista previa y descargarlo en la plantilla de Oracle.", c="dimmed", mb=30, size="sm"),
-        
-        dcc.Upload(
-            id='upload-data-bcp',
-            children=html.Div([
-                DashIconify(icon="tabler:cloud-upload", width=30, color="#6c757d", style={"marginBottom": 10}),
-                dmc.Text("Arrastra o haz clic para subir CSV", size="sm", fw=500),
-            ], style={
-                'display': 'flex',
-                'flexDirection': 'column',
-                'alignItems': 'center',
-                'justifyContent': 'center',
-                'padding': '30px',
-                'border': '1px dashed #495057', # Darker border for dark mode compatibility
-                'borderRadius': '6px',
-                'cursor': 'pointer',
-                'backgroundColor': 'rgba(255, 255, 255, 0.02)'
-            }),
-            multiple=False
+        dmc.Title("Conciliación Bancaria", order=2, fw=500, mb=4),
+        dmc.Text(
+            "Selecciona el banco, sube el archivo en su formato original y descarga el CSV listo para Oracle.",
+            c="dimmed", mb=20, size="sm"
         ),
-        
-        dmc.Space(h=30),
+
+        dmc.Grid(
+            gutter="md",
+            mb=20,
+            children=[
+                dmc.GridCol(
+                    span={"base": 12, "md": 3},
+                    children=dmc.Select(
+                        id='bank-select',
+                        label="Banco",
+                        placeholder="Selecciona un banco",
+                        data=BANK_OPTIONS,
+                        value="BCP",
+                    ),
+                ),
+                dmc.GridCol(
+                    span={"base": 12, "md": 9},
+                    children=html.Div(id='upload-container'),
+                ),
+            ],
+        ),
+
         html.Div(id='output-preview-bcp'),
         dcc.Store(id='store-processed-data'),
         dcc.Download(id="download-dataframe-csv-bcp"),
     ]
 )
 
+
+@callback(
+    Output('upload-container', 'children'),
+    Input('bank-select', 'value'),
+)
+def render_upload(bank):
+    accept = BANK_ACCEPT.get(bank or 'BCP', '.csv,.xls,.xlsx')
+    label = "CSV" if bank == 'BCP' else "Excel (.xls / .xlsx)"
+    return dcc.Upload(
+        id='upload-data-bcp',
+        accept=accept,
+        style={"marginTop": "24px"},
+        children=html.Div([
+            DashIconify(icon="tabler:cloud-upload", width=22, color="#6c757d", style={"marginRight": 10}),
+            dmc.Text(f"Arrastra o haz clic para subir {label}", size="sm", fw=500),
+        ], style={
+            'display': 'flex',
+            'flexDirection': 'row',
+            'alignItems': 'center',
+            'justifyContent': 'center',
+            'padding': '12px 20px',
+            'border': '1px dashed #495057',
+            'borderRadius': '6px',
+            'cursor': 'pointer',
+            'backgroundColor': 'rgba(255, 255, 255, 0.02)',
+            'minHeight': '42px',
+        }),
+        multiple=False
+    )
+
+
 @callback(
     [Output('output-preview-bcp', 'children'),
      Output('store-processed-data', 'data')],
     Input('upload-data-bcp', 'contents'),
     State('upload-data-bcp', 'filename'),
+    State('bank-select', 'value'),
     prevent_initial_call=True
 )
-def process_upload(contents, filename):
+def process_upload(contents, filename, bank):
     if contents is None:
         return None, None
 
     try:
-        content_type, content_string = contents.split(',')
+        _, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
-        data_str = decoded.decode('latin-1')
-        df = pd.read_csv(io.StringIO(data_str), skiprows=4,dtype={'Operación - Número':str,"Monto":str})
-        df["Monto"] = df["Monto"].str.replace(',','').astype(float)
-        df = df.dropna(subset=['Fecha', 'Monto'], how='all')
-        if '' in df.columns:
-            df = df.drop(columns=[''])
 
-        expected_cols = ['Fecha', 'Descripción operación', 'Monto', 'Operación - Número', 'UTC']
-        missing_cols = [c for c in expected_cols if c not in df.columns]
-        if missing_cols:
-            return dmc.Alert(
-                f"Faltan columnas: {', '.join(missing_cols)}",
-                color="red",
-                icon=DashIconify(icon="tabler:alert-circle"),
-            ), None
+        processor = PROCESSORS.get(bank)
+        if processor is None:
+            return dmc.Alert("Banco no soportado", color="red",
+                             icon=DashIconify(icon="tabler:alert-circle")), None
 
-        df['temp_date'] = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
-        if df['temp_date'].isnull().any():
-             df.loc[df['temp_date'].isnull(), 'temp_date'] = pd.to_datetime(df['Fecha'], errors='coerce')
-        df['oracle_date'] = df['temp_date'].dt.strftime('%m/%d/%Y')
-        
-        df['oracle_type'] = df.apply(lambda row: get_transaction_type(row['Monto'], row['UTC']), axis=1)
-        
-        oracle_df = pd.DataFrame()
-        oracle_df['Date (MM/DD/YYYY)'] = df['oracle_date']
-        oracle_df['Payer/Payee Name'] = ''
-        oracle_df['Transaction Id'] = df['Operación - Número'].fillna('').astype(str)
-        oracle_df['Transaction Type'] = df['oracle_type']
-        oracle_df['Amount'] = pd.to_numeric(df['Monto'], errors='coerce').fillna(0)
-        oracle_df['Amount'] = oracle_df['Amount'].map('{:.2f}'.format)
-        oracle_df['Memo'] = df['Descripción operación'].fillna('')
-        oracle_df['NS Internal Customer Id'] = ''
-        oracle_df['NS Customer Name'] = ''
-        oracle_df['Invoice Number(s)'] = ''
-        print(oracle_df.info())
-        # Generar vista previa
+        oracle_df = processor(decoded)
+
         preview_table = dash_table.DataTable(
-            data=oracle_df.head(10).to_dict('records'),
+            data=oracle_df.head(15).to_dict('records'),
             columns=[{'name': i, 'id': i} for i in oracle_df.columns],
             style_as_list_view=True,
-            style_table={'overflowX': 'auto'},
+            page_size=15,
+            style_table={'overflowX': 'auto', 'width': '100%'},
             style_header={
                 'backgroundColor': 'rgba(255, 255, 255, 0.05)',
                 'fontWeight': '600',
-                'borderBottom': '1px solid rgba(255, 255, 255, 0.1)'
+                'borderBottom': '1px solid rgba(255, 255, 255, 0.1)',
+                'whiteSpace': 'normal',
+                'height': 'auto',
             },
             style_cell={
-                'padding': '12px 15px',
+                'padding': '8px 10px',
                 'textAlign': 'left',
                 'fontFamily': 'inherit',
-                'fontSize': '13px',
+                'fontSize': '12.5px',
                 'backgroundColor': 'transparent',
-                'borderBottom': '1px solid rgba(255, 255, 255, 0.05)'
+                'borderBottom': '1px solid rgba(255, 255, 255, 0.05)',
+                'whiteSpace': 'normal',
+                'height': 'auto',
+                'maxWidth': '260px',
+                'overflow': 'hidden',
+                'textOverflow': 'ellipsis',
             },
+            style_cell_conditional=[
+                {'if': {'column_id': 'Date (MM/DD/YYYY)'}, 'width': '110px'},
+                {'if': {'column_id': 'Payer/Payee Name'}, 'width': '120px'},
+                {'if': {'column_id': 'Transaction Id'}, 'width': '120px'},
+                {'if': {'column_id': 'Transaction Type'}, 'width': '110px'},
+                {'if': {'column_id': 'Amount'}, 'width': '100px', 'textAlign': 'right'},
+                {'if': {'column_id': 'NS Internal Customer Id'}, 'width': '140px'},
+                {'if': {'column_id': 'NS Customer Name'}, 'width': '130px'},
+                {'if': {'column_id': 'Invoice Number(s)'}, 'width': '130px'},
+            ],
         )
 
+        bank_label = next((b['label'] for b in BANK_OPTIONS if b['value'] == bank), bank)
         preview_div = html.Div([
             html.Div(
                 style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-end', 'marginBottom': '15px'},
                 children=[
                     html.Div([
-                        dmc.Text("Vista Previa (Primeras 10 filas)", fw=500, size="sm"),
+                        dmc.Text(f"Vista Previa — {bank_label} (primeras 15 filas)", fw=500, size="sm"),
                         dmc.Text(f"Total a exportar: {len(oracle_df)} registros", size="xs", c="dimmed"),
                     ]),
                     dmc.Button(
@@ -159,7 +458,8 @@ def process_upload(contents, filename):
             dmc.Paper(preview_table, withBorder=True, radius="md", p=0, style={"overflow": "hidden"})
         ])
 
-        return preview_div, oracle_df.to_dict('records')
+        stored = {'bank': bank, 'records': oracle_df.to_dict('records')}
+        return preview_div, stored
 
     except Exception as e:
         import traceback
@@ -170,6 +470,7 @@ def process_upload(contents, filename):
             icon=DashIconify(icon="tabler:alert-circle"),
         ), None
 
+
 @callback(
     Output("download-dataframe-csv-bcp", "data"),
     Input("btn-download-bcp", "n_clicks"),
@@ -178,8 +479,9 @@ def process_upload(contents, filename):
 )
 def download_data(n_clicks, data):
     if n_clicks and data:
-        df = pd.DataFrame(data)
-        print(df["Transaction Id"].unique())
-        filename = f"BCP_Oracle_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        bank = data.get('bank', 'BCP') if isinstance(data, dict) else 'BCP'
+        records = data.get('records', []) if isinstance(data, dict) else data
+        df = pd.DataFrame(records)
+        filename = f"{bank}_Oracle_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         return dcc.send_data_frame(df.to_csv, filename, index=False)
     return dash.no_update
