@@ -438,14 +438,17 @@ def create_matching_table(sunat_data, oracle_data):
     
     # Convertir los datos a DataFrames
     df_sunat = pd.DataFrame(sunat_data)
+    print(df_sunat.columns)
+    df_sunat = df_sunat.rename(columns={"Número de Comprobante":"factura"})
     df_oracle = pd.DataFrame(oracle_data)
-   
+    print(df_oracle.columns)
+    df_oracle = df_oracle.rename(columns={"factura_limpia":"factura"})
     # Hacer el merge por ruc y factura_limpia
     df_merged = pd.merge(
         
         df_oracle,
         df_sunat,
-        on=['ruc', 'ruc'],
+        on=['ruc', 'factura'],
         how='left',
         suffixes=('_oracle', '_sunat')
     )

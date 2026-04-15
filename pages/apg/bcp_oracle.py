@@ -398,64 +398,130 @@ def process_upload(contents, filename, bank):
 
         oracle_df = processor(decoded)
 
+        COL_LABELS = {
+            'Date (MM/DD/YYYY)': 'Fecha',
+            'Payer/Payee Name': 'Payer / Payee',
+            'Transaction Id': 'Transaction ID',
+            'Transaction Type': 'Tipo',
+            'Amount': 'Monto',
+            'Memo': 'Memo',
+            'NS Internal Customer Id': 'NS Customer ID',
+            'NS Customer Name': 'NS Customer',
+            'Invoice Number(s)': 'Invoice #',
+        }
+        MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+
         preview_table = dash_table.DataTable(
             data=oracle_df.head(15).to_dict('records'),
-            columns=[{'name': i, 'id': i} for i in oracle_df.columns],
-            style_as_list_view=True,
+            columns=[{'name': COL_LABELS.get(c, c), 'id': c} for c in oracle_df.columns],
             page_size=15,
-            style_table={'overflowX': 'auto', 'width': '100%'},
+            cell_selectable=False,
+            style_table={'overflowX': 'auto', 'width': '100%', 'borderCollapse': 'separate'},
             style_header={
-                'backgroundColor': 'rgba(255, 255, 255, 0.05)',
+                'backgroundColor': 'rgba(255, 255, 255, 0.04)',
+                'color': 'rgba(255, 255, 255, 0.65)',
                 'fontWeight': '600',
-                'borderBottom': '1px solid rgba(255, 255, 255, 0.1)',
-                'whiteSpace': 'normal',
+                'fontSize': '11px',
+                'textTransform': 'uppercase',
+                'letterSpacing': '0.6px',
+                'padding': '14px 14px',
+                'border': 'none',
+                'borderBottom': '1px solid rgba(255, 255, 255, 0.12)',
+                'whiteSpace': 'nowrap',
                 'height': 'auto',
             },
             style_cell={
-                'padding': '8px 10px',
+                'padding': '12px 14px',
                 'textAlign': 'left',
                 'fontFamily': 'inherit',
-                'fontSize': '12.5px',
+                'fontSize': '13px',
+                'color': 'rgba(255, 255, 255, 0.88)',
                 'backgroundColor': 'transparent',
-                'borderBottom': '1px solid rgba(255, 255, 255, 0.05)',
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'maxWidth': '260px',
+                'border': 'none',
+                'borderBottom': '1px solid rgba(255, 255, 255, 0.04)',
+                'whiteSpace': 'nowrap',
                 'overflow': 'hidden',
                 'textOverflow': 'ellipsis',
+                'maxWidth': '280px',
             },
             style_cell_conditional=[
-                {'if': {'column_id': 'Date (MM/DD/YYYY)'}, 'width': '110px'},
-                {'if': {'column_id': 'Payer/Payee Name'}, 'width': '120px'},
-                {'if': {'column_id': 'Transaction Id'}, 'width': '120px'},
-                {'if': {'column_id': 'Transaction Type'}, 'width': '110px'},
-                {'if': {'column_id': 'Amount'}, 'width': '100px', 'textAlign': 'right'},
-                {'if': {'column_id': 'NS Internal Customer Id'}, 'width': '140px'},
-                {'if': {'column_id': 'NS Customer Name'}, 'width': '130px'},
-                {'if': {'column_id': 'Invoice Number(s)'}, 'width': '130px'},
+                {'if': {'column_id': 'Date (MM/DD/YYYY)'}, 'width': '110px', 'fontFamily': MONO, 'color': 'rgba(255,255,255,0.7)'},
+                {'if': {'column_id': 'Payer/Payee Name'}, 'width': '130px'},
+                {'if': {'column_id': 'Transaction Id'}, 'width': '140px', 'fontFamily': MONO},
+                {'if': {'column_id': 'Transaction Type'}, 'width': '120px'},
+                {'if': {'column_id': 'Amount'}, 'width': '130px', 'textAlign': 'right', 'fontFamily': MONO, 'fontWeight': '600'},
+                {'if': {'column_id': 'Memo'}, 'minWidth': '240px'},
+                {'if': {'column_id': 'NS Internal Customer Id'}, 'width': '150px'},
+                {'if': {'column_id': 'NS Customer Name'}, 'width': '140px'},
+                {'if': {'column_id': 'Invoice Number(s)'}, 'width': '120px'},
+            ],
+            style_data_conditional=[
+                # Zebra striping
+                {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgba(255,255,255,0.015)'},
+                # Hover
+                {'if': {'state': 'active'}, 'backgroundColor': 'rgba(59,130,246,0.08)', 'border': 'none'},
+                # Type badges
+                {
+                    'if': {'filter_query': '{Transaction Type} = "CREDIT"', 'column_id': 'Transaction Type'},
+                    'color': '#4ade80', 'fontWeight': '600', 'fontSize': '11px', 'letterSpacing': '0.5px',
+                },
+                {
+                    'if': {'filter_query': '{Transaction Type} = "DEBIT"', 'column_id': 'Transaction Type'},
+                    'color': '#f87171', 'fontWeight': '600', 'fontSize': '11px', 'letterSpacing': '0.5px',
+                },
+                {
+                    'if': {'filter_query': '{Transaction Type} = "TRANSFER"', 'column_id': 'Transaction Type'},
+                    'color': '#60a5fa', 'fontWeight': '600', 'fontSize': '11px', 'letterSpacing': '0.5px',
+                },
+                {
+                    'if': {'filter_query': '{Transaction Type} = "FEE"', 'column_id': 'Transaction Type'},
+                    'color': '#fbbf24', 'fontWeight': '600', 'fontSize': '11px', 'letterSpacing': '0.5px',
+                },
+                # Amount color by sign
+                {
+                    'if': {'filter_query': '{Transaction Type} = "CREDIT"', 'column_id': 'Amount'},
+                    'color': '#4ade80',
+                },
+                {
+                    'if': {'filter_query': '{Transaction Type} = "DEBIT"', 'column_id': 'Amount'},
+                    'color': '#f87171',
+                },
+                # Dim empty NS columns
+                {'if': {'column_id': 'Payer/Payee Name'}, 'color': 'rgba(255,255,255,0.35)'},
+                {'if': {'column_id': 'NS Internal Customer Id'}, 'color': 'rgba(255,255,255,0.35)'},
+                {'if': {'column_id': 'NS Customer Name'}, 'color': 'rgba(255,255,255,0.35)'},
+                {'if': {'column_id': 'Invoice Number(s)'}, 'color': 'rgba(255,255,255,0.35)'},
             ],
         )
 
         bank_label = next((b['label'] for b in BANK_OPTIONS if b['value'] == bank), bank)
+
+        header_row = html.Div(
+            style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '14px'},
+            children=[
+                dmc.Group(gap=8, children=[
+                    dmc.Badge(bank_label, color="blue", variant="light", radius="sm"),
+                    dmc.Text("Vista previa", fw=600, size="sm"),
+                    dmc.Text(f"· primeras {min(15, len(oracle_df))} de {len(oracle_df)} filas", size="xs", c="dimmed"),
+                ]),
+                dmc.Button(
+                    "Descargar CSV",
+                    id="btn-download-bcp",
+                    leftSection=DashIconify(icon="tabler:download"),
+                    color="blue",
+                    size="sm",
+                    variant="filled",
+                ),
+            ]
+        )
+
         preview_div = html.Div([
-            html.Div(
-                style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-end', 'marginBottom': '15px'},
-                children=[
-                    html.Div([
-                        dmc.Text(f"Vista Previa — {bank_label} (primeras 15 filas)", fw=500, size="sm"),
-                        dmc.Text(f"Total a exportar: {len(oracle_df)} registros", size="xs", c="dimmed"),
-                    ]),
-                    dmc.Button(
-                        "Descargar CSV",
-                        id="btn-download-bcp",
-                        leftSection=DashIconify(icon="tabler:download"),
-                        color="blue",
-                        size="sm",
-                        variant="light"
-                    )
-                ]
+            header_row,
+            dmc.Paper(
+                preview_table,
+                withBorder=True, radius="md", p=0,
+                style={"overflow": "hidden", "backgroundColor": "rgba(255,255,255,0.01)"}
             ),
-            dmc.Paper(preview_table, withBorder=True, radius="md", p=0, style={"overflow": "hidden"})
         ])
 
         stored = {'bank': bank, 'records': oracle_df.to_dict('records')}
