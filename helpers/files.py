@@ -81,3 +81,18 @@ def load_data_cosecha_campo():
     except Exception as e:
         print(f"Error cargando datos: {e}")
         return pd.DataFrame()
+    
+
+def load_data_agritracer():
+    print("📊 Cargando datos de Transformación Transporte...")
+    
+    data = listar_archivos_en_carpeta_compartida(
+        drive_id=config['agri']['drive_id'], 
+        item_id=config['agri']['item_id'],
+        access_token=get_access_token()
+    )
+    url_parquet= get_download_url_by_name(data, "AGRITRACER_GENERAL.parquet")
+    df = pd.read_parquet(url_parquet)
+    df = df.groupby(["DOCUMENTO","TRABAJADOR","EMPRESA","FECHA"])[["COPIA"]].count().reset_index()
+    df = df[["DOCUMENTO","EMPRESA","FECHA","TRABAJADOR"]]
+    return df

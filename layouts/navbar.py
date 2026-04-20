@@ -60,6 +60,14 @@ def create_navbar(data):
                             active="exact",
                             href="/packing/gh_asistencia"
                         ),
+                        #
+                        dmc.NavLink(
+                            leftSection=get_icon(icon="tabler:users"),
+                            label="Transporte Agri",
+                            id = "navlink-dashboard",
+                            active="exact",
+                            href="/apg/transporte-agri"
+                        ),
                     ],
                 ),
                 dmc.NavLink(
