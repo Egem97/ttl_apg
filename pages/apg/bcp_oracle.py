@@ -280,8 +280,11 @@ def process_nacion(decoded):
 
     cargo = df['Cargo'].map(to_num)
     abono = df['Abono'].map(to_num)
-    amount = abono - cargo  # Cargo -> negative, Abono -> positive
-    tipo = ['CREDIT' if a > 0 else 'DEBIT' for a in amount]
+    # Cargo viene ya con signo negativo en el archivo del BN (ej. -52,810.00).
+    # Amount = cargo + abono (respeta el signo negativo del cargo).
+    amount = cargo + abono
+    # Tipo según la columna donde está el movimiento: Cargo -> DEBIT, Abono -> CREDIT.
+    tipo = ['DEBIT' if c != 0 else 'CREDIT' for c, _ in zip(cargo, abono)]
 
     fechas = pd.to_datetime(df['Fecha'], format='%Y.%m.%d', errors='coerce')
     mask = fechas.isnull()
