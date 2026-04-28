@@ -1,4 +1,5 @@
 import base64
+import csv
 import io
 import pandas as pd
 import dash
@@ -35,11 +36,11 @@ BANK_OPTIONS = [
 ]
 
 BANK_ACCEPT = {
-    "BCP": ".csv",
-    "SCOTIABANK": ".xls,.xlsx",
-    "BBVA": ".xls,.xlsx",
-    "INTERBANK": ".xls,.xlsx",
-    "NACION": ".xls,.xlsx",
+    "BCP": ".csv,.xls,.xlsx",
+    "SCOTIABANK": ".csv,.xls,.xlsx",
+    "BBVA": ".csv,.xls,.xlsx",
+    "INTERBANK": ".csv,.xls,.xlsx",
+    "NACION": ".csv,.xls,.xlsx",
 }
 
 
@@ -58,13 +59,50 @@ def _finalize(oracle_df):
     return oracle_df[ORACLE_COLUMNS]
 
 
+def _is_excel_bytes(decoded):
+    # xlsx (zip): 'PK\x03\x04'  |  xls (OLE): '\xD0\xCF\x11\xE0'
+    return decoded[:4] in (b'PK\x03\x04', b'\xD0\xCF\x11\xE0')
+
+
+def _is_html_bytes(decoded):
+    head = decoded[:512].lstrip().lower()
+    return head.startswith(b'<') or b'<html' in head or b'<table' in head
+
+
 def _read_bytes_as_excel(decoded):
-    try:
-        return pd.read_excel(io.BytesIO(decoded), sheet_name=None, header=None)
-    except Exception:
-        # Fallback: some "xls" files are actually HTML
+    """Lee bytes como tabla cruda (sin header) desde xls/xlsx, csv o html."""
+    # Excel binario (xls/xlsx)
+    if _is_excel_bytes(decoded):
+        try:
+            return pd.read_excel(io.BytesIO(decoded), sheet_name=None, header=None)
+        except Exception:
+            pass
+    # HTML disfrazado de xls
+    if _is_html_bytes(decoded):
         tables = pd.read_html(io.BytesIO(decoded))
         return {f"sheet{i}": t for i, t in enumerate(tables)}
+    # CSV (texto plano) — usa csv.reader para tolerar cabeceras con columnas variables
+    for enc in ('utf-8-sig', 'latin-1', 'cp1252'):
+        try:
+            text = decoded.decode(enc)
+        except Exception:
+            continue
+        for sep in (',', ';', '\t', '|'):
+            try:
+                rows = list(csv.reader(io.StringIO(text), delimiter=sep))
+            except Exception:
+                continue
+            if not rows:
+                continue
+            max_cols = max((len(r) for r in rows), default=0)
+            if max_cols < 2:
+                continue
+            padded = [r + [None] * (max_cols - len(r)) for r in rows]
+            df = pd.DataFrame(padded)
+            return {'csv': df}
+    # Último intento: HTML
+    tables = pd.read_html(io.BytesIO(decoded))
+    return {f"sheet{i}": t for i, t in enumerate(tables)}
 
 
 # -------------------- BCP --------------------
@@ -81,13 +119,38 @@ def _bcp_type(amount, utc):
     return 'CREDIT' if amt > 0 else 'DEBIT'
 
 
-def process_bcp(decoded):
+def _bcp_from_excel(decoded):
+    sheets = _read_bytes_as_excel(decoded)
+    raw = next(iter(sheets.values()))
+    expected = ['Fecha', 'Descripción operación', 'Monto', 'Operación - Número', 'UTC']
+    header_idx = None
+    for i, row in raw.iterrows():
+        vals = [str(x).strip() for x in row.values]
+        if all(c in vals for c in expected):
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("No se encontró la fila de cabecera en el archivo BCP")
+
+    df = raw.iloc[header_idx + 1:].copy()
+    df.columns = [str(c).strip() for c in raw.iloc[header_idx].values]
+    df = df.loc[:, df.columns.notna() & (df.columns != 'nan')]
+    df = df.dropna(subset=['Fecha', 'Monto'], how='all')
+    return df
+
+
+def _bcp_from_csv(decoded):
     data_str = decoded.decode('latin-1')
     df = pd.read_csv(io.StringIO(data_str), skiprows=4, dtype={'Operación - Número': str, "Monto": str})
     df["Monto"] = df["Monto"].str.replace(',', '').astype(float)
     df = df.dropna(subset=['Fecha', 'Monto'], how='all')
     if '' in df.columns:
         df = df.drop(columns=[''])
+    return df
+
+
+def process_bcp(decoded):
+    df = _bcp_from_excel(decoded) if _is_excel_bytes(decoded) else _bcp_from_csv(decoded)
 
     expected = ['Fecha', 'Descripción operación', 'Monto', 'Operación - Número', 'UTC']
     missing = [c for c in expected if c not in df.columns]
@@ -100,8 +163,8 @@ def process_bcp(decoded):
         temp.loc[mask] = pd.to_datetime(df.loc[mask, 'Fecha'], errors='coerce')
 
     out = _empty_oracle_df()
-    out['Date (MM/DD/YYYY)'] = temp.dt.strftime('%m/%d/%Y')
-    out['Transaction Id'] = df['Operación - Número'].fillna('').astype(str)
+    out['Date (MM/DD/YYYY)'] = temp.dt.strftime('%m/%d/%Y').values
+    out['Transaction Id'] = df['Operación - Número'].fillna('').astype(str).values
     out['Transaction Type'] = df.apply(lambda r: _bcp_type(r['Monto'], r['UTC']), axis=1).values
     out['Amount'] = pd.to_numeric(df['Monto'], errors='coerce').fillna(0).values
     out['Memo'] = df['Descripción operación'].fillna('').values
@@ -354,7 +417,7 @@ layout = dmc.Container(
 )
 def render_upload(bank):
     accept = BANK_ACCEPT.get(bank or 'BCP', '.csv,.xls,.xlsx')
-    label = "CSV" if bank == 'BCP' else "Excel (.xls / .xlsx)"
+    label = "CSV o Excel (.xls / .xlsx)"
     return dcc.Upload(
         id='upload-data-bcp',
         accept=accept,
