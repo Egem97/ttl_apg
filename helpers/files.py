@@ -93,6 +93,7 @@ def load_data_agritracer():
     )
     url_parquet= get_download_url_by_name(data, "AGRITRACER_GENERAL.parquet")
     df = pd.read_parquet(url_parquet)
-    df = df.groupby(["DOCUMENTO","TRABAJADOR","EMPRESA","FECHA"])[["COPIA"]].count().reset_index()
-    df = df[["DOCUMENTO","EMPRESA","FECHA","TRABAJADOR"]]
+    print(df.columns)
+    df = df.groupby(["DOCUMENTO","TRABAJADOR","EMPRESA","FECHA","ACTIVIDAD","PARTIDA PRESUPUESTARIA","MACRO PARTIDA"])[["COPIA"]].count().reset_index()
+    df = df[["DOCUMENTO","EMPRESA","FECHA","TRABAJADOR","ACTIVIDAD","PARTIDA PRESUPUESTARIA","MACRO PARTIDA"]]
     return df
