@@ -32,7 +32,7 @@ app = dash.get_app()
 PAGE_ID = "transporte-agri-"
 
 
-AGRI_COLUMNS = ["DOCUMENTO", "EMPRESA", "FECHA", "TRABAJADOR","ACTIVIDAD","PARTIDA PRESUPUESTARIA","MACRO PARTIDA"]
+AGRI_COLUMNS = ["DOCUMENTO", "EMPRESA", "FECHA","FUNDO", "TRABAJADOR","ACTIVIDAD","PARTIDA PRESUPUESTARIA","MACRO PARTIDA"]
 EXCEL_DNI_COL = "DNI"
 EXCEL_FECHA_COL = "Fecha Registro"
 
@@ -267,7 +267,7 @@ def process_excel_and_merge(contents, agri_data, filename):
     df_agri["_dni_key"] = _normalize_dni(df_agri["DOCUMENTO"]).astype(str)
     df_agri["_fecha_key"] = _normalize_fecha(df_agri["FECHA"]).astype(str)
     df_agri_match = (
-        df_agri[["_dni_key", "_fecha_key", "EMPRESA", "TRABAJADOR","ACTIVIDAD","PARTIDA PRESUPUESTARIA","MACRO PARTIDA"]]
+        df_agri[["_dni_key", "_fecha_key", "EMPRESA","FUNDO", "TRABAJADOR","ACTIVIDAD","PARTIDA PRESUPUESTARIA","MACRO PARTIDA"]]
         .drop_duplicates(subset=["_dni_key", "_fecha_key"], keep="first")
         .rename(columns={"EMPRESA": "AGRI_EMPRESA", "TRABAJADOR": "AGRI_TRABAJADOR"})
     )
