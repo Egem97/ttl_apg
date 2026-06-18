@@ -45,6 +45,13 @@ def create_navbar(data):
                             active="exact",
                             href="/apg/conciliacion-transform"
                         ),
+                        dmc.NavLink(
+                            leftSection=get_icon(icon="tabler:bank"),
+                            label="TXT Pagos Proveedores",
+                            id = "navlink-pagos-proveedores",
+                            active="exact",
+                            href="/apg/pagos_proveedores"
+                        ),
                     ],
                 ),
                 

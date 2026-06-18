@@ -263,7 +263,7 @@ def process_excel_and_merge(contents, agri_data, filename):
 
     df_excel["_dni_key"] = _normalize_dni(df_excel[EXCEL_DNI_COL]).astype(str)
     df_excel["_fecha_key"] = _normalize_fecha(df_excel[EXCEL_FECHA_COL]).astype(str)
-    print(df_agri.columns)
+    
     df_agri["_dni_key"] = _normalize_dni(df_agri["DOCUMENTO"]).astype(str)
     df_agri["_fecha_key"] = _normalize_fecha(df_agri["FECHA"]).astype(str)
     df_agri_match = (
