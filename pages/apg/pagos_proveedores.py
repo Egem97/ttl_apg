@@ -8,6 +8,7 @@ from constants import PAGE_TITLE_PREFIX
 import base64
 import io
 import zipfile
+import unicodedata
 
 pd.options.mode.chained_assignment = None
 
@@ -19,33 +20,60 @@ PAGE_ID = "pagos_proveedores-"
 # ── Reglas de transformación ────────────────────────────────────────────────
 # Las observaciones del banco sobre el archivo de "Pagos Globales a Proveedores":
 #   1. El código "TRANSD" (Transferencia de Fondos) no es aceptado -> reemplazar por "1".
-#   2. El tipo de cuenta figura como Cuenta Corriente ("C", 2º carácter del registro)
-#      y debe registrarse como Cuenta Interbancaria ("B").
-# Solo aplican a los registros de DETALLE (líneas que empiezan con "2").
-# La línea de CABECERA (empieza con "1") no se modifica.
+#   2. El tipo de cuenta bancaria (2º carácter del registro) se MANTIENE tal como lo
+#      entrega ORACLE. Existen tres dígitos posibles: "A" = Cuenta Ahorro,
+#      "B" = Cuenta Interbancaria, "C" = Cuenta Corriente. No se fuerza ninguna conversión.
+#   3. Los nombres de los proveedores deben ir sin tildes (se eliminan los acentos).
+#   4. Las filas de DETALLE deben quedar alineadas: el campo de monto (último campo)
+#      se empuja al borde derecho rellenando con espacios entre el nombre y el monto,
+#      hasta el ancho de la fila de detalle más larga del archivo.
+# La línea de CABECERA (empieza con "1") no se rellena (solo se quitan espacios sobrantes).
 TRANSD_CODE = "TRANSD"
 TRANSD_REPLACEMENT = "1"
 
 
+def strip_accents(text):
+    """Elimina tildes/acentos preservando el largo (á→a, é→e, ñ→n, ü→u)."""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
 def transform_line(raw_line):
-    """Transforma una línea. Devuelve (línea_transformada, n_transd, cambio_cuenta)."""
+    """Limpia/transforma el contenido de una línea (sin ajustar ancho).
+    Devuelve (línea, n_transd, n_tildes)."""
     clean = raw_line.rstrip("\r")
     n_transd = 0
-    cuenta_changed = False
+    n_tildes = 0
 
     # Solo registros de detalle
     if clean.startswith("2"):
-        # 1) Tipo de cuenta: Corriente (C) -> Interbancaria (B), únicamente el 2º carácter
-        if len(clean) > 1 and clean[1] == "C":
-            clean = clean[0] + "B" + clean[2:]
-            cuenta_changed = True
-
-        # 2) Modalidad de pago: "TRANSD" -> "1" (restaura además el ancho fijo del registro)
+        # Modalidad de pago: "TRANSD" -> "1"
+        # (el dígito de cuenta bancaria A/B/C se conserva intacto)
         if TRANSD_CODE in clean:
             n_transd = clean.count(TRANSD_CODE)
             clean = clean.replace(TRANSD_CODE, TRANSD_REPLACEMENT)
 
-    return clean, n_transd, cuenta_changed
+    # Quitar tildes/acentos (nombres de proveedores). Preserva el largo.
+    sin_tildes = strip_accents(clean)
+    if sin_tildes != clean:
+        n_tildes = sum(1 for a, b in zip(clean, sin_tildes) if a != b)
+    clean = sin_tildes
+
+    return clean, n_transd, n_tildes
+
+
+def align_detail(line, width):
+    """Empuja el último campo (monto) al borde derecho hasta 'width' caracteres,
+    rellenando con espacios entre el nombre del proveedor y el monto."""
+    stripped = line.rstrip()
+    parts = stripped.rsplit(None, 1)  # separa solo en el último bloque de espacios
+    if len(parts) == 2:
+        prefix, amount = parts
+        n_spaces = width - len(prefix) - len(amount)
+        if n_spaces < 1:
+            n_spaces = 1  # al menos un separador
+        return prefix + (" " * n_spaces) + amount
+    return stripped.ljust(width)
 
 
 def process_file_content(content_string, original_filename):
@@ -61,15 +89,28 @@ def process_file_content(content_string, original_filename):
             text = decoded.decode("latin-1")
 
         lines = text.split("\n")
-        out_lines = []
+        cleaned = []
         total_transd = 0
-        total_cuenta = 0
+        total_tildes = 0
 
         for raw in lines:
-            new_line, n_transd, cuenta_changed = transform_line(raw)
+            new_line, n_transd, n_tildes = transform_line(raw)
             total_transd += n_transd
-            total_cuenta += 1 if cuenta_changed else 0
-            out_lines.append(new_line)
+            total_tildes += n_tildes
+            cleaned.append(new_line)
+
+        # Ancho objetivo = fila de DETALLE más larga (registros que empiezan con "2")
+        detail_widths = [len(l) for l in cleaned if l.startswith("2")]
+        target_width = max(detail_widths) if detail_widths else 0
+
+        out_lines = []
+        for l in cleaned:
+            if l.startswith("2"):
+                # Detalle: monto alineado al borde derecho (ancho fijo)
+                out_lines.append(align_detail(l, target_width))
+            else:
+                # Cabecera / otras líneas: sin relleno, solo quitar espacios sobrantes
+                out_lines.append(l.rstrip())
 
         # Reconstruir con CRLF (formato bancario), preservando estructura/última línea
         content = "\r\n".join(out_lines)
@@ -77,7 +118,7 @@ def process_file_content(content_string, original_filename):
         stats = {
             "filename": original_filename,
             "transd": total_transd,
-            "cuenta": total_cuenta,
+            "tildes": total_tildes,
             "lineas": sum(1 for l in out_lines if l),
         }
         return original_filename, content, stats
@@ -94,7 +135,8 @@ def create_custom_layout():
                 dmc.Title("Transformación TXT Pagos a Proveedores", order=2),
                 dmc.Text(
                     "Sube de 1 a N archivos .txt. Se corrige: código TRANSD → 1, "
-                    "y tipo de cuenta Corriente (C) → Interbancaria (B). La cabecera no se modifica.",
+                    "se eliminan tildes de los nombres y todas las filas se ajustan a 179 caracteres. "
+                    "El tipo de cuenta (A/B/C) se conserva tal como lo entrega ORACLE.",
                     size="sm", c="dimmed", mb="sm",
                 ),
             ], size=8),
@@ -183,9 +225,9 @@ def update_output(list_of_contents, list_of_names):
         )
 
     total_transd = sum(s["transd"] for s in all_stats)
-    total_cuenta = sum(s["cuenta"] for s in all_stats)
+    total_tildes = sum(s["tildes"] for s in all_stats)
     detalle = " · ".join(
-        f"{s['filename']}: {s['lineas']} líneas, TRANSD→1: {s['transd']}, C→B: {s['cuenta']}"
+        f"{s['filename']}: {s['lineas']} líneas, TRANSD→1: {s['transd']}, tildes eliminadas: {s['tildes']}"
         for s in all_stats
     )
 
@@ -193,7 +235,7 @@ def update_output(list_of_contents, list_of_names):
         children=[
             dmc.Text(
                 f"{len(processed_files)} archivo(s) procesado(s). "
-                f"Total reemplazos TRANSD→1: {total_transd} | Cuentas C→B: {total_cuenta}",
+                f"Total reemplazos TRANSD→1: {total_transd} | Tildes eliminadas: {total_tildes} | Montos alineados al borde derecho",
                 fw=600,
             ),
             dmc.Text(detalle, size="xs", c="dimmed", mt=4),
