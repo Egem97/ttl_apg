@@ -16,7 +16,9 @@ def load_data_cosecha_campo():
         )
         url_excel_1 = get_download_url_by_name(data, "COSECHA CAMPO.parquet")
         df = pd.read_parquet(url_excel_1)
-        
+        df["FECHA"] = pd.to_datetime(df["FECHA"])
+        df = df[df["FECHA"]>='2026-06-01']
+        print(df["FUNDO_"].unique())
         # Procesamiento básico de fechas si existe la columna
         if "FECHA" in df.columns:
             df["FECHA"] = pd.to_datetime(df["FECHA"], errors='coerce')
@@ -39,19 +41,22 @@ def load_data_cosecha_campo():
             "SAN PEDRO": ["EXCELLENCE FRUIT SAC",5,"SAN PEDRO : SP ALMACEN MATERIA PRIMA",16,"SPE"],
             "SAN JOSE": ["EXCELLENCE FRUIT SAC",5,"SAN JOSE I : SJ ALMACEN MATERIA PRIMA",6,"SJO"],
             "SAN JOSE II": ["EXCELLENCE FRUIT SAC",5,"SAN JOSE I : SJ ALMACEN MATERIA PRIMA",6,"SJO"],
-            "LICAPA": ["QBERRIES SAC",3,"QBERRIES : QB ALMACEN MATERIA PRIMA",61,"QB1"],
-            "GAP BERRIES": ["GAP BERRIES SAC",15,"GAP : GA ALMACEN MATERIA PRIMA",34,"GAP"],
+            "QBERRIES I": ["QBERRIES SAC",3,"QBERRIES : QB ALMACEN MATERIA PRIMA",61,"QB1"],
+            "QBERRIES II MAGICA": ["QBERRIES SAC",3,"QBERRIES : QB ALMACEN MATERIA PRIMA",61,"QB2"],
+            "QBERRIES II SEKOYA": ["QBERRIES SAC",3,"QBERRIES : QB ALMACEN MATERIA PRIMA",61,"QB3"],
+            "GAP": ["GAP BERRIES SAC",15,"GAP : GA ALMACEN MATERIA PRIMA",34,"GAP"],
             "LAS BRISAS": ["TARA FARM SAC",6,"TARA : TR ALMACEN MATERIA PRIMA",74,"TAR"],
-            "EL POTRERO": ["CANYON BERRIES SAC",14,"CANYON : CY ALMACEN MATERIA PRIMA",25,"CAN"],
+            "CANYON MAGICA": ["CANYON BERRIES SAC",14,"CANYON : CY ALMACEN MATERIA PRIMA",25,"CAN"],
+            "CANYON MADEIRA": ["CANYON BERRIES SAC",14,"CANYON : CY ALMACEN MATERIA PRIMA",25,"CAN"],
             "LA COLINA": ["BIG BERRIES SAC",12,"BIG : BB ALMACEN MATERIA PRIMA",52,"BIG"],
         }
         
         # Mapeo de columnas
-        df['SUBSIDIARIA'] = df['FUNDO'].map(lambda x: netsuite_columns.get(x, [None]*5)[0])
-        df['COD_SUBSIDIARIA'] = df['FUNDO'].map(lambda x: netsuite_columns.get(x, [None]*5)[1])
-        df['ALMACEN'] = df['FUNDO'].map(lambda x: netsuite_columns.get(x, [None]*5)[2])
-        df['COD_ALMACEN'] = df['FUNDO'].map(lambda x: netsuite_columns.get(x, [None]*5)[3])
-        df['COD_FUNDO'] = df['FUNDO'].map(lambda x: netsuite_columns.get(x, [None]*5)[4])
+        df['SUBSIDIARIA'] = df['FUNDO_'].map(lambda x: netsuite_columns.get(x, [None]*5)[0])
+        df['COD_SUBSIDIARIA'] = df['FUNDO_'].map(lambda x: netsuite_columns.get(x, [None]*5)[1])
+        df['ALMACEN'] = df['FUNDO_'].map(lambda x: netsuite_columns.get(x, [None]*5)[2])
+        df['COD_ALMACEN'] = df['FUNDO_'].map(lambda x: netsuite_columns.get(x, [None]*5)[3])
+        df['COD_FUNDO'] = df['FUNDO_'].map(lambda x: netsuite_columns.get(x, [None]*5)[4])
         filtro_big = (df["FUNDO"] == "LA COLINA") & (df['LOTE'].isin(["LOTE 003","LOTE 004","LOTE 005","LOTE 010"]))
         df.loc[filtro_big, ['SUBSIDIARIA', 'COD_SUBSIDIARIA', 'ALMACEN','COD_ALMACEN','COD_FUNDO']] = [
             "GOLDEN BERRIES SAC", 
