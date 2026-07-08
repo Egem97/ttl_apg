@@ -175,3 +175,4 @@ pruebas_streamlit.py
 *.xlsx
 *.xls
 *.md
+transformer_mapping_oracle_id.py

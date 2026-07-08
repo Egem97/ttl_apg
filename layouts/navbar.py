@@ -67,10 +67,25 @@ def create_navbar(data):
                             active="exact",
                             href="/apg/transform-materia-prima"
                         ),
-                        
+
                     ],
                 ),
-               
+                dmc.NavLink(
+                    label="Costos",
+                    leftSection=get_icon(icon="tabler:table"),
+                    childrenOffset=28,
+                    opened=False,
+                    children=[
+                        dmc.NavLink(
+                            leftSection=get_icon(icon="tabler:table-import"),
+                            label="Transform Oracle Mapping",
+                            id = "navlink-transform-oracle-mapping",
+                            active="exact",
+                            href="/costos/transform-oracle-mapping"
+                        ),
+                    ],
+                ),
+
             ],
             p=0,
         )
